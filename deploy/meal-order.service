@@ -1,0 +1,35 @@
+[Unit]
+Description=家庭点菜 H5 后端服务
+Documentation=file:/srv/meal-order/deploy/DEPLOY.md
+After=network.target mysql.service
+Wants=mysql.service
+
+[Service]
+Type=simple
+User=mealorder
+Group=mealorder
+WorkingDirectory=/srv/meal-order/server
+
+# 环境变量来自 .env（含数据库密码、JWT_SECRET，权限请设为 600）
+EnvironmentFile=/srv/meal-order/server/.env
+
+ExecStart=/usr/bin/node src/server.js
+
+# 崩溃自动重启
+Restart=always
+RestartSec=3
+
+# 日志进 journald：journalctl -u meal-order -f
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=meal-order
+
+# 基础加固
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/srv/meal-order/server/uploads
+
+[Install]
+WantedBy=multi-user.target
