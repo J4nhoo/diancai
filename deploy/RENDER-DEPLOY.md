@@ -1,10 +1,12 @@
-# 部署到 Render + Aiven + Cloudflare R2（免费路线）
+# 部署到 Render + Aiven + 腾讯云 COS
 
-全部免费额度内：**Render** 跑 Node 服务、**Aiven** 提供 MySQL、**Cloudflare R2** 存菜品图片。
+**Render** 跑 Node 服务、**Aiven** 提供 MySQL、**腾讯云 COS** 存菜品图片。
 
 > 为什么不把图片放 Render：免费档的磁盘是**临时的**，每次重新部署或休眠回收后文件都没了，而库里还留着 URL，菜图会全部变裂图。所以图片必须放外部存储。
 
-三者的免费额度对本项目都绰绰有余（1 个月约 180 张压缩后图片 ≈ 50MB，R2 免费 10GB）。
+> 用 COS 而不是 Cloudflare R2：R2 即使只用免费的 10GB，**也必须先给账户绑一张信用卡**才能开通（且不支持 PayPal）。COS 国内访问更快、费用极低（50MB 存储约几毛钱/月），但要实名认证。
+
+三者的容量对本项目都绰绰有余（1 个月约 180 张压缩后图片 ≈ 50MB）。
 
 ---
 
@@ -34,16 +36,24 @@ deploy/
 
 ---
 
-## 第 2 步：Cloudflare R2
+## 第 2 步：腾讯云 COS
 
-1. 登录 Cloudflare → **R2** → **Create bucket**，名字如 `meal-images`。
-2. 桶的 **Settings** → **Public access** → 允许公开访问，拿到形如
-   `https://pub-xxxxxxxxxxxx.r2.dev` 的公网地址（也可绑自己的域名，更快且不被限速）。
-3. 右上角 **Manage R2 API Tokens** → **Create API Token**：
-   - 权限选 **Object Read & Write**
-   - 可限定只能访问 `meal-images` 这个桶
-   - 创建后记下 **Access Key ID** 和 **Secret Access Key**（Secret 只显示一次）
-4. 记下账户 ID（在 R2 概览页右侧，或 API Token 页面会带出）。
+1. 注册 https://cloud.tencent.com 并完成**实名认证**（个人认证即可，几分钟）。
+2. 控制台搜索 **对象存储 COS** → **创建存储桶**：
+   - 名称：如 `meal-images`
+   - 地域：选离你近的（如 `ap-guangzhou` 广州 / `ap-shanghai` 上海）
+   - **访问权限：必须选「公有读私有写」** ← 关键，选错图片会全部 403
+   - 其余默认即可
+3. 记下桶名。注意**桶名带 APPID 后缀**，形如 `meal-images-1250000000`（在桶列表能看到全名）。
+4. 右上角头像 → **访问管理** → **API 密钥管理** → **新建密钥**，抄下：
+   - `SecretId`
+   - `SecretKey`（只显示一次，务必当场抄）
+
+> **费用**：COS 没有永久免费额度，但有按量计费的极低单价。50MB 存储 + 每天几十次访问，
+> 一个月大约**几毛钱**。建议在控制台设个「余额不足提醒」，避免欠费停服。
+
+> **可选加速**：给桶绑定 CDN 加速域名后，把域名填到 `COS_PUBLIC_BASE_URL`，国内加载更快。
+> 不绑也能用，默认域名是 `https://<桶名>.cos.<地域>.myqcloud.com`。
 
 ---
 
@@ -88,13 +98,14 @@ JWT_EXPIRES_IN=7d
 # 启动时自动建表建种子（幂等）。Render 免费档没有 Shell，靠这个省掉手工初始化。
 AUTO_INIT_DB=true
 
-STORAGE_DRIVER=r2
+STORAGE_DRIVER=cos
 MAX_UPLOAD_MB=8
-R2_ACCOUNT_ID=<你的账户 ID>
-R2_ACCESS_KEY_ID=<R2 Access Key>
-R2_SECRET_ACCESS_KEY=<R2 Secret>
-R2_BUCKET=meal-images
-R2_PUBLIC_BASE_URL=https://pub-xxxxxxxxxxxx.r2.dev
+COS_SECRET_ID=<SecretId>
+COS_SECRET_KEY=<SecretKey>
+COS_BUCKET=meal-images-1250000000
+COS_REGION=ap-guangzhou
+# 留空则用默认域名；绑了 CDN 加速域名就填这里
+COS_PUBLIC_BASE_URL=
 
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=<首次登录用的强密码>
@@ -111,12 +122,13 @@ node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 
 ```
 [meal-order] 服务已启动 → http://127.0.0.1:10000  (env=production)
-[meal-order] 图片存储：r2
+[meal-order] 图片存储：cos
 [meal-order] 前端目录：/opt/render/project/src/web
-[meal-order] R2 连接校验通过
+[meal-order] cos 存储校验通过
 ```
 
-`R2 连接校验通过` 很关键 —— 它说明 R2 配置正确。若打印失败，先解决再往下走。
+`cos 存储校验通过` 很关键。这个校验不仅测试能否上传，**还会实际读取一次公网地址** ——
+如果桶的访问权限不是「公有读私有写」，这里会直接报 `写入成功但公网读取失败`，把问题在部署阶段就暴露出来，而不是等你传完图才发现全是裂图。
 
 ---
 
@@ -189,14 +201,15 @@ Render 免费档**空闲 15 分钟就休眠**，下次访问要等约 50 秒冷�
 | 现象 | 原因 / 处理 |
 | --- | --- |
 | 启动/请求日志反复出现 `ERR_ERL_PERMISSIVE_TRUST_PROXY` | `TRUST_PROXY` 填了 `true`。改成 `1`。功能上不致命，但登录限流会被伪造 IP 绕过 |
-| 启动日志 `R2 连接校验失败` | Key/Secret/Bucket/AccountId 有一项填错，或 Token 权限不是 Object Read & Write |
-| 图片上传成功但显示裂图 | `R2_PUBLIC_BASE_URL` 不对，或桶没开启公共访问。在浏览器直接打开图片 URL 验证 |
+| 启动日志 `cos 存储校验失败` | SecretId/SecretKey/Bucket/Region 有一项填错，或桶名漏了 APPID 后缀 |
+| 启动日志 `写入成功但公网读取失败` | COS 桶的访问权限不是「公有读私有写」，去桶设置里改 |
+| 图片上传成功但显示裂图 | 桶权限不对（同上），或 `COS_PUBLIC_BASE_URL` 填了错的加速域名。在浏览器直接打开图片 URL 验证 |
 | `DB_UNAVAILABLE` | Aiven 服务在休眠/已删除，或 `DB_SSL` 没开 |
 | `self signed certificate` | 把 `DB_SSL_REJECT_UNAUTHORIZED` 改成 `false` |
 | `ER_NO_SUCH_TABLE` | `AUTO_INIT_DB` 没开，或自动初始化失败（看启动日志的 `[auto-init]` 行） |
 | 第一次打开要等 1 分钟 | 免费档冷启动，按第 6 步挂定时器即可避免 |
 | 登录提示「尝试过于频繁」 | 登录限流 15 分钟 10 次，等待即可 |
-| 图片几个月后消失 | R2 免费额度内不会；检查 R2 桶是否被清理，或账号是否超额 |
+| 图片几个月后消失 | 检查 COS 账号是否欠费停服。建议在腾讯云设「余额不足提醒」 |
 
 ## 忘记管理员密码
 

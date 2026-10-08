@@ -1,7 +1,7 @@
 # 部署到轻量云服务器
 
 > 这条是**自建 VPS 路线**（Nginx + systemd + 本地磁盘存图）。
-> 如果要用 Render + Aiven + R2 的免费托管路线，看同目录的 [RENDER-AIVEN.md](./RENDER-AIVEN.md)。
+> 如果要用 Render + Aiven + 腾讯云 COS 的托管路线，看同目录的 [RENDER-DEPLOY.md](./RENDER-DEPLOY.md)。
 > 两者选其一即可。
 
 目标：一台 Linux 服务器（Ubuntu 22.04 / Debian 12 为例），Nginx + Node.js + MySQL 全在一台机器上，HTTPS 通过 Let's Encrypt 免费证书。

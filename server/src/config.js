@@ -78,6 +78,17 @@ const config = {
       // 形如 https://pub-xxxx.r2.dev 或自定义域名，末尾不要带斜杠
       publicBaseUrl: (process.env.R2_PUBLIC_BASE_URL || '').replace(/\/+$/, ''),
     },
+    cos: {
+      secretId: process.env.COS_SECRET_ID || '',
+      secretKey: process.env.COS_SECRET_KEY || '',
+      // 桶名要带 APPID 后缀，形如 meal-images-1250000000
+      bucket: process.env.COS_BUCKET || '',
+      // 形如 ap-guangzhou / ap-shanghai
+      region: process.env.COS_REGION || '',
+      // 留空则用默认域名 https://<bucket>.cos.<region>.myqcloud.com
+      // 绑定了 CDN 加速域名后填这里，末尾不带斜杠
+      publicBaseUrl: (process.env.COS_PUBLIC_BASE_URL || '').replace(/\/+$/, ''),
+    },
   },
 
   rootDir,
@@ -99,8 +110,8 @@ if (config.isProd && config.jwt.secret === 'dev-only-insecure-secret') {
   throw new Error('生产环境必须配置 JWT_SECRET，请参考 .env.example');
 }
 
-if (!['local', 'r2'].includes(config.storage.driver)) {
-  throw new Error(`STORAGE_DRIVER 只能是 local 或 r2，当前为：${config.storage.driver}`);
+if (!['local', 'r2', 'cos'].includes(config.storage.driver)) {
+  throw new Error(`STORAGE_DRIVER 只能是 local / r2 / cos，当前为：${config.storage.driver}`);
 }
 
 if (config.storage.driver === 'r2') {
@@ -111,6 +122,16 @@ if (config.storage.driver === 'r2') {
   if (missing.length) {
     throw new Error(
       `STORAGE_DRIVER=r2 时必须配置：${missing.join(', ')}（请参考 .env.example）`
+    );
+  }
+}
+
+if (config.storage.driver === 'cos') {
+  const cos = config.storage.cos;
+  const missing = ['secretId', 'secretKey', 'bucket', 'region'].filter((k) => !cos[k]);
+  if (missing.length) {
+    throw new Error(
+      `STORAGE_DRIVER=cos 时必须配置：${missing.join(', ')}（请参考 .env.example）`
     );
   }
 }

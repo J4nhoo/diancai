@@ -97,11 +97,11 @@ async function start() {
     console.log(`[meal-order] 服务已启动 → http://127.0.0.1:${config.port}  (env=${config.env})`);
     console.log(`[meal-order] 图片存储：${storage.name}${storage.shouldServeStatic() ? `（${config.upload.dir}）` : ''}`);
     console.log(`[meal-order] 前端目录：${config.webDir}`);
-    if (config.storage.driver === 'r2' && typeof storage.verify === 'function') {
+    if (typeof storage.verify === 'function') {
       storage
         .verify()
-        .then(() => console.log('[meal-order] R2 连接校验通过'))
-        .catch((err) => console.error('[meal-order] R2 连接校验失败：', err.message));
+        .then(() => console.log(`[meal-order] ${storage.name} 存储校验通过`))
+        .catch((err) => console.error(`[meal-order] ${storage.name} 存储校验失败：`, err.message));
     }
   });
 

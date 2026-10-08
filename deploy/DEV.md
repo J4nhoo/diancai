@@ -2,7 +2,7 @@
 
 无需构建步骤：后端 Express 直接托管 `web/` 静态文件，改完刷新浏览器即可。
 
-图片默认存本地磁盘（`STORAGE_DRIVER=local`），不需要配 R2 就能开发。只有部署到 Render 时才需要切到 R2，见 [RENDER-AIVEN.md](./RENDER-AIVEN.md)。
+图片默认存本地磁盘（`STORAGE_DRIVER=local`），不需要配对象存储就能开发。只有部署到 Render 时才需要切到腾讯云 COS，见 [RENDER-DEPLOY.md](./RENDER-DEPLOY.md)。
 
 ## 1. 准备 MySQL
 
