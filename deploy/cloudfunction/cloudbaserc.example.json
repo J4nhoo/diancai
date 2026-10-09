@@ -1,5 +1,6 @@
 {
-  "envId": "env-xxxxxxxx",
+  "envId": "meal-order-xxxxxxxxxxxxxxxxx",
+  "region": "ap-singapore",
   "functionRoot": "deploy/cloudfunction",
   "functions": [
     {
