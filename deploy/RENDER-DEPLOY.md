@@ -1,5 +1,9 @@
 # 部署到 Render + Aiven + 腾讯云 COS
 
+> ⚠️ **Render 免费档现在要求绑信用卡做身份验证**（反滥用），没有卡就走不通。
+> 不想绑卡的话看同目录的 [CLOUDBASE.md](./CLOUDBASE.md)——腾讯云 CloudBase 云托管，已实名即可。
+> 本文档的「Aiven MySQL」与「腾讯云 COS」两节对两条路线都通用。
+
 **Render** 跑 Node 服务、**Aiven** 提供 MySQL、**腾讯云 COS** 存菜品图片。
 
 > 为什么不把图片放 Render：免费档的磁盘是**临时的**，每次重新部署或休眠回收后文件都没了，而库里还留着 URL，菜图会全部变裂图。所以图片必须放外部存储。
