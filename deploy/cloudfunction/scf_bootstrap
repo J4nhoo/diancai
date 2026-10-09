@@ -1,0 +1,18 @@
+#!/bin/bash
+# 腾讯云 SCF / CloudBase HTTP 云函数启动脚本
+#
+# 要求（不满足会静默启动失败）：
+#   - 文件名必须恰好是 scf_bootstrap
+#   - 必须用 LF 换行（见仓库根 .gitattributes）
+#   - 必须可执行：chmod +x scf_bootstrap
+#   - 必须监听 9000 端口（CloudBase 约定）
+#
+# 执行时工作目录是函数包根，而后端入口在 server/ 子目录，所以要先 cd 进去。
+
+cd "$(dirname "$0")/server" || exit 1
+
+# 兜底端口：CloudBase HTTP 云函数必须监听 9000。
+# 若控制台已配 PORT，则以其为准。
+export PORT="${PORT:-9000}"
+
+exec node src/server.js

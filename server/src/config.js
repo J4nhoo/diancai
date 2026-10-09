@@ -1,10 +1,27 @@
 'use strict';
 
 const path = require('path');
+const fs = require('fs');
 
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env'), quiet: true });
 
 const rootDir = path.resolve(__dirname, '..');
+
+// 前端所在目录。不同部署方式布局不同：
+//   仓库结构（Docker / VPS / Render）：<仓库根>/web，即 server/ 的兄弟目录
+//   云函数包：把 web/ 复制进函数包内，即 <函数包>/server/web
+// 用 WEB_DIR 显式指定，或自动探测上述两种。
+function resolveWebDir() {
+  if (process.env.WEB_DIR) return path.resolve(rootDir, process.env.WEB_DIR);
+  const candidates = [
+    path.resolve(rootDir, '..', 'web'), // 仓库结构：server/ 的兄弟目录
+    path.resolve(rootDir, 'web'), // 云函数包结构：web/ 在函数包内
+  ];
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, 'index.html'))) return dir;
+  }
+  return candidates[0];
+}
 
 function bool(value, fallback) {
   if (value === undefined || value === '') return fallback;
@@ -92,7 +109,7 @@ const config = {
   },
 
   rootDir,
-  webDir: path.resolve(rootDir, '..', 'web'),
+  webDir: resolveWebDir(),
 
   // 启动时自动建表建种子（幂等）。托管平台没有 Shell 时用它省掉手工跑 init-db。
   autoInitDb: bool(process.env.AUTO_INIT_DB, false),

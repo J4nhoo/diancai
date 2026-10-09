@@ -6,8 +6,15 @@ node_modules/
 .env.local
 .env.*.local
 
-# 本地上传的图片（生产用 R2；本地调试产生的图片不必入库）
+# 本地上传的图片（生产用 COS；本地调试产生的图片不必入库）
 server/uploads/
+
+# CloudBase 云函数：真实配置含密钥，只提交 .example
+cloudbaserc.json
+.cloudbaserc.json
+
+# 云函数打包产物（由 deploy/cloudfunction/build.sh 生成，含 node_modules）
+deploy/cloudfunction/meal-order-api/
 
 # 日志与临时文件
 *.log
