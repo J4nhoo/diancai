@@ -30,13 +30,42 @@ deploy/
 
 ## 第 1 步：Aiven MySQL
 
-1. 注册 https://aiven.io ，新建 **MySQL** 服务。选 **Free** 计划，区域就近（如 `google-asia-east1`）。
+> ### ⚠️ 一定要建成 **MySQL**，别建成 PostgreSQL
+>
+> Aiven 新建服务的默认类型是 **PostgreSQL**，很容易顺手建错。本项目用的是 `mysql2` 驱动，
+> **连不上 PostgreSQL**，而且报错极具误导性：
+>
+> ```
+> TCP 连接成功 → TLS 握手成功 → 然后 MySQL 协议层永远 0 字节，最后 ETIMEDOUT
+> ```
+>
+> 原因：**MySQL 是服务端先发问候包，PostgreSQL 是客户端先发 startup 包**。
+> 用 MySQL 客户端去连 Postgres，双方都在等对方先开口，于是永远超时 ——
+> 看起来像"数据库挂了"，实际是协议不匹配。
+>
+> **自查方法**：给端口发 PostgreSQL 的 SSLRequest（长度 8 + 魔数 `80877103`）。
+> 若服务端回单个字节 `S`，那就是 Postgres，不是 MySQL。
+>
+> Aiven 免费档确实有「闲置自动关机」政策（官方文档写明，会先发通知，可随时开回来），
+> 但遇到连接超时**先排查是不是建成了 Postgres**，再怀疑关机。
+
+1. 注册 https://aiven.io → **Create service** → 服务类型务必选 **MySQL**（不是 PostgreSQL）。
+   选 **Free** 计划，区域选**和 CloudBase 环境同区域**（如 `ap-singapore`）以降低延迟。
 2. 等服务变成 Running（约 2-5 分钟），在 **Overview** 页记下：
    - `Host`、`Port`、`User`（默认 `avnadmin`）、`Password`
    - **默认数据库是 `defaultdb`**（免费档不能自己建库，所以直接用 `defaultdb`）
 3. 下载 **CA Certificate**（或直接信任，见下）。
 
 > **关于证书**：Aiven 用受信任 CA 签发证书，Node 自带的根证书库能验通，所以 `DB_SSL_REJECT_UNAUTHORIZED=true` 通常可以直接用，不需要下载 CA 文件。若遇到 `self signed certificate` 报错，再改成 `false`。
+
+> **验证连通性**（建完服务后、部署前先跑一次，能省很多排查时间）：
+> ```bash
+> cd server
+> DB_HOST=<Host> DB_PORT=<Port> DB_USER=avnadmin DB_PASSWORD=<密码> \
+> DB_NAME=defaultdb DB_SSL=true \
+> npm run init-db
+> ```
+> 看到「全部完成 ✓」说明数据库正确且可连。这一步不依赖任何云平台。
 
 ---
 
@@ -208,7 +237,8 @@ Render 免费档**空闲 15 分钟就休眠**，下次访问要等约 50 秒冷�
 | 启动日志 `cos 存储校验失败` | SecretId/SecretKey/Bucket/Region 有一项填错，或桶名漏了 APPID 后缀 |
 | 启动日志 `写入成功但公网读取失败` | COS 桶的访问权限不是「公有读私有写」，去桶设置里改 |
 | 图片上传成功但显示裂图 | 桶权限不对（同上），或 `COS_PUBLIC_BASE_URL` 填了错的加速域名。在浏览器直接打开图片 URL 验证 |
-| `DB_UNAVAILABLE` | Aiven 服务在休眠/已删除，或 `DB_SSL` 没开 |
+| 连接**超时**（TCP/TLS 都通但 MySQL 无响应） | **多半是把 Aiven 服务建成了 PostgreSQL** —— 见第 1 步的警告。用 SSLRequest 探一下就知道了 |
+| `DB_UNAVAILABLE` | Aiven 服务被闲置关机（登录 Aiven 开回来），或 `DB_SSL` 没开 |
 | `self signed certificate` | 把 `DB_SSL_REJECT_UNAUTHORIZED` 改成 `false` |
 | `ER_NO_SUCH_TABLE` | `AUTO_INIT_DB` 没开，或自动初始化失败（看启动日志的 `[auto-init]` 行） |
 | 第一次打开要等 1 分钟 | 免费档冷启动，按第 6 步挂定时器即可避免 |

@@ -53,6 +53,10 @@ HTTP 云函数是常驻进程模型（靠 `scf_bootstrap` 拉起一个 Web 服�
 见 [RENDER-DEPLOY.md](./RENDER-DEPLOY.md)：
 
 - **Aiven MySQL**：Free 计划 → 抄 Host / Port / Password（User 用 `avnadmin`，库名 `defaultdb`）
+  > ⚠️ **服务类型务必选 MySQL，不要选 PostgreSQL**（Aiven 默认是 Postgres）。
+  > 建错了的表现是：TCP 连上、TLS 握手成功，然后 MySQL 层永远 0 字节直到超时 ——
+  > 因为 MySQL 是服务端先发问候包、Postgres 是客户端先发，双方互相等。
+  > 详见 RENDER-DEPLOY.md 第 1 步的警告。
 - **腾讯云 COS**：建桶（权限选「**公有读私有写**」）→ 抄 SecretId / SecretKey / 完整桶名 / 地域
 
 再生成 JWT 密钥：
