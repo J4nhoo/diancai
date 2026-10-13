@@ -47,12 +47,20 @@ function errorHandler(err, req, res, next) {
 
   if (
     err &&
-    (err.code === 'ECONNREFUSED' || err.code === 'ER_ACCESS_DENIED_ERROR' || err.code === 'ETIMEDOUT')
+    (err.code === 'ECONNREFUSED' ||
+      err.code === 'ER_ACCESS_DENIED_ERROR' ||
+      err.code === 'ETIMEDOUT' ||
+      // 数据库域名解析失败：托管数据库被回收 / 关机后常见
+      err.code === 'ENOTFOUND' ||
+      err.code === 'EAI_AGAIN')
   ) {
     console.error('[db]', err.code, err.message);
     return res.status(503).json({
       ok: false,
-      error: { code: 'DB_UNAVAILABLE', message: '数据库连接失败或超时，请检查数据库是否可访问' },
+      error: {
+        code: 'DB_UNAVAILABLE',
+        message: '数据库连接失败，请确认数据库服务在运行、地址无误',
+      },
     });
   }
 
