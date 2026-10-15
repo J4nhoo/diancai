@@ -33,12 +33,14 @@ App.pages['page-admin-users'] = {
             <template v-if="!u.isOwner">
               <button type="button" class="btn small" @click="openEdit(u)">编辑</button>
               <button type="button" class="btn small" @click="resetPassword(u)">改密</button>
-              <button type="button" class="btn small danger" v-if="u.id !== me.id && u.status === 1"
-                      :disabled="busy === u.id" @click="disable(u)">
-                {{ busy === u.id ? '…' : '停用' }}
-              </button>
               <button type="button" class="btn small" v-if="u.id !== me.id && u.status !== 1"
                       :disabled="busy === u.id" @click="enable(u)">启用</button>
+              <template v-if="u.id !== me.id">
+                <button type="button" class="btn small" v-if="u.status === 1"
+                        :disabled="busy === u.id" @click="disable(u)">停用</button>
+                <button type="button" class="btn small danger" :disabled="busy === u.id"
+                        @click="removeUser(u)">删除</button>
+              </template>
             </template>
             <span v-else class="hint-inline">不可修改</span>
           </div>
@@ -216,12 +218,31 @@ App.pages['page-admin-users'] = {
       }
     }
 
+    /** 停用：保留记录、禁止登录。用 PATCH 改 status，不用 DELETE。 */
     async function disable(u) {
       if (!window.confirm(`确定停用「${u.displayName}」吗？停用后将无法登录。`)) return;
       busy.value = u.id;
       try {
-        await App.api.del(`/api/admin/users/${u.id}`);
+        await App.api.patch(`/api/admin/users/${u.id}`, { status: 0 });
         App.toast.success('已停用');
+        await load();
+      } catch (err) {
+        App.toast.error(err.message);
+      } finally {
+        busy.value = 0;
+      }
+    }
+
+    /** 真删除。只对从未下过单的账号有效；下过单的后端会拒绝并提示改用停用。 */
+    async function removeUser(u) {
+      const ok = window.confirm(
+        `确定删除账号「${u.displayName}」吗？\n\n下过单的账号无法删除（历史订单会失去归属），这种情况请改用「停用」。`
+      );
+      if (!ok) return;
+      busy.value = u.id;
+      try {
+        await App.api.del(`/api/admin/users/${u.id}`);
+        App.toast.success('已删除');
         await load();
       } catch (err) {
         App.toast.error(err.message);
@@ -250,7 +271,7 @@ App.pages['page-admin-users'] = {
     return {
       users, loading, busy, panel, editing, saving, error, form, me, canGrant,
       permissionCatalog, allChecked, toggleAll,
-      openCreate, openEdit, close, save, resetPassword, disable, enable,
+      openCreate, openEdit, close, save, resetPassword, disable, enable, removeUser,
     };
   },
 };

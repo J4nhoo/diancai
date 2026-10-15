@@ -13,6 +13,7 @@ const AUDIT_ACTION_LABELS = {
   'user.update': '修改账号',
   'user.password': '重置密码',
   'user.disable': '停用账号',
+  'user.delete': '删除账号',
   'perm.grant': '授予权限',
   'perm.revoke': '回收权限',
   'log.delete': '删除记录',

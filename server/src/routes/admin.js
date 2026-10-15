@@ -311,7 +311,13 @@ router.patch(
   })
 );
 
-/** 删除账号 = 停用（保留历史订单的外键），不能删除自己，不能停用所有者 */
+/**
+ * 删除账号。
+ *
+ * 只允许删除【从未下过单】的账号（含自动清理其权限与评价）。
+ * 有历史订单的账号不能物理删除 —— orders.user_id 是 RESTRICT，否则订单会失去归属，
+ * 历史汇总也读不出是谁点的。这种情况提示改用停用。
+ */
 router.delete(
   '/users/:id',
   requirePermission('user.manage'),
@@ -320,22 +326,28 @@ router.delete(
     if (id === req.user.id) throw forbidden('不能删除自己的账号');
 
     const target = await db.queryOne(
-      'SELECT id, display_name, is_owner FROM users WHERE id = ?',
+      'SELECT id, username, display_name, role, is_owner FROM users WHERE id = ?',
       [id]
     );
     if (!target) throw notFound('账号不存在');
-    if (target.is_owner === 1) throw forbidden('所有者账号不可停用');
+    if (target.is_owner === 1) throw forbidden('所有者账号不可删除');
+
+    const orders = await db.queryOne('SELECT COUNT(*) AS c FROM orders WHERE user_id = ?', [id]);
+    if (Number(orders.c) > 0) {
+      throw conflict('该账号下过单，删除会让历史订单失去归属；如需停用请改用「停用」');
+    }
 
     await db.withTransaction(async (conn) => {
-      await conn.query('UPDATE users SET status = 0, token_version = token_version + 1 WHERE id = ?', [id]);
+      // 权限与评价是 CASCADE，会随账号一起清掉
+      await conn.query('DELETE FROM users WHERE id = ?', [id]);
       await audit.record(conn, {
         actor: audit.actorOf(req),
-        action: 'user.disable',
+        action: 'user.delete',
         targetType: 'user',
         targetId: id,
         targetName: target.display_name,
-        before: { status: 1 },
-        after: { status: 0 },
+        before: { username: target.username, displayName: target.display_name, role: target.role },
+        after: null,
       });
     });
 

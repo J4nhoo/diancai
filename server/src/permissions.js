@@ -14,7 +14,7 @@ const PERMISSIONS = [
   { key: 'summary.view', label: '查看汇总', desc: '按日期查看当日汇总菜单、一键复制' },
   { key: 'order.viewAll', label: '查看全部订单', desc: '查看所有人（而非仅自己）的订单' },
   { key: 'menu.manage', label: '管理菜品与分组', desc: '新增/修改/删除/下架菜品，增删改分组，上传图片' },
-  { key: 'user.manage', label: '管理账号', desc: '新建账号、改显示名、停用/启用、重置密码' },
+  { key: 'user.manage', label: '管理账号', desc: '新建账号、改显示名、停用/启用、删除、重置密码' },
   { key: 'user.grant', label: '分配权限', desc: '给账号增删权限（提权操作，请谨慎授予）' },
   { key: 'log.view', label: '查看操作记录', desc: '查看菜品、分组、账号与权限的变更记录' },
   { key: 'log.delete', label: '删除操作记录', desc: '删除变更记录（所有者删除不留痕，其他人删除会留下记录）' },
