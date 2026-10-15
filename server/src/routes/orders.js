@@ -2,20 +2,20 @@
 
 const express = require('express');
 const db = require('../db');
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate, requirePermission } = require('../middleware/auth');
 const { asyncHandler, ok, badRequest, notFound, forbidden } = require('../utils/http');
 const { dateStr, int, str, todayStr } = require('../utils/validate');
 
 const router = express.Router();
 
-router.use(authenticate, requireRole('family'));
+router.use(authenticate, requirePermission('order.submit'));
 
 const ITEM_SQL = `
   SELECT oi.dish_id, oi.quantity, oi.flavor, d.name AS dish_name, d.image_url
   FROM order_items oi
   JOIN dishes d ON d.id = oi.dish_id
   WHERE oi.order_id = ?
-  ORDER BY d.sort_order, d.id`;
+  ORDER BY d.id`;
 
 async function loadItems(orderId) {
   const rows = await db.query(ITEM_SQL, [orderId]);

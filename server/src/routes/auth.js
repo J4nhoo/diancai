@@ -11,7 +11,21 @@ const { shapeUser } = require('../utils/shape');
 const router = express.Router();
 
 const USER_FIELDS =
-  'id, username, display_name, role, status, token_version, created_at';
+  'id, username, display_name, role, is_owner, status, token_version, created_at';
+
+/** 取某账号的权限列表；所有者返回 null（表示全部权限） */
+async function permsOf(user) {
+  if (user.is_owner === 1) return null;
+  const rows = await db.query(
+    'SELECT permission FROM user_permissions WHERE user_id = ? ORDER BY permission',
+    [user.id]
+  );
+  return rows.map((r) => r.permission);
+}
+
+async function shapeWithPerms(user) {
+  return shapeUser(user, await permsOf(user));
+}
 
 /** 登录：账号不存在、已停用、密码错误统一提示，避免枚举出账号 */
 router.post(
@@ -30,7 +44,8 @@ router.post(
     const matched = await bcrypt.compare(password, user.password_hash);
     if (!matched) throw fail;
 
-    ok(res, { token: signToken(user), user: shapeUser(user) });
+    // 前端要靠 isOwner / permissions 决定导航，所以登录必须一并返回
+    ok(res, { token: signToken(user), user: await shapeWithPerms(user) });
   })
 );
 
@@ -41,7 +56,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const user = await db.queryOne(`SELECT ${USER_FIELDS} FROM users WHERE id = ?`, [req.user.id]);
     if (!user || user.status !== 1) throw unauthorized('账号已被停用，请联系管理者');
-    ok(res, shapeUser(user));
+    ok(res, await shapeWithPerms(user));
   })
 );
 
@@ -66,7 +81,7 @@ router.post(
     );
 
     const fresh = await db.queryOne(`SELECT ${USER_FIELDS} FROM users WHERE id = ?`, [req.user.id]);
-    ok(res, { token: signToken(fresh), user: shapeUser(fresh) });
+    ok(res, { token: signToken(fresh), user: await shapeWithPerms(fresh) });
   })
 );
 

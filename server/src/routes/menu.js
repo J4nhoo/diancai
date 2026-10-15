@@ -2,11 +2,13 @@
 
 const express = require('express');
 const db = require('../db');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, requirePermission } = require('../middleware/auth');
 const { asyncHandler, ok } = require('../utils/http');
 const { shapeDish } = require('../utils/shape');
 
 const router = express.Router();
+
+router.use(authenticate, requirePermission('menu.view'));
 
 /** 点菜用的菜单：仅返回上架分组与上架菜品，按分组嵌套 */
 router.get(
@@ -17,8 +19,8 @@ router.get(
       'SELECT id, name, sort_order FROM dish_groups WHERE status = 1 ORDER BY sort_order, id'
     );
     const dishes = await db.query(
-      `SELECT id, group_id, name, image_url, price, flavor, sort_order
-       FROM dishes WHERE status = 1 ORDER BY sort_order, id`
+      `SELECT id, group_id, name, image_url, notes, flavor
+       FROM dishes WHERE status = 1 ORDER BY id`
     );
 
     const byGroup = new Map();

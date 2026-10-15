@@ -39,13 +39,16 @@ App.pages['page-admin-dishes'] = {
             </div>
             <div class="admin-sub">
               {{ d.groupName || '未分组' }}
-              <template v-if="d.price != null"> · ￥{{ d.price.toFixed(2) }}</template>
+              <template v-if="d.notes"> · {{ d.notes }}</template>
             </div>
           </div>
           <div class="admin-actions">
             <button type="button" class="btn small" @click="openEdit(d)">编辑</button>
             <button type="button" class="btn small" v-if="d.status === 1" @click="toggleStatus(d, 0)">下架</button>
             <button type="button" class="btn small" v-else @click="toggleStatus(d, 1)">上架</button>
+            <button type="button" class="btn small danger" :disabled="busy === d.id" @click="removeDish(d)">
+              {{ busy === d.id ? '…' : '删除' }}
+            </button>
           </div>
         </li>
       </ul>
@@ -78,12 +81,8 @@ App.pages['page-admin-dishes'] = {
             </select>
           </label>
           <label class="field">
-            <span>参考价（可选）</span>
-            <input v-model="form.price" type="number" min="0" step="0.01" placeholder="留空表示不显示" />
-          </label>
-          <label class="field">
-            <span>排序（可选，小在前）</span>
-            <input v-model="form.sortOrder" type="number" min="0" step="1" placeholder="0" />
+            <span>备注（可选）</span>
+            <textarea v-model="form.notes" rows="2" maxlength="500" placeholder="例如：孩子爱吃、少放辣"></textarea>
           </label>
 
           <p v-if="error" class="form-error">{{ error }}</p>
@@ -136,8 +135,9 @@ App.pages['page-admin-dishes'] = {
     const saving = Vue.ref(false);
     const uploading = Vue.ref(false);
     const uploadStage = Vue.ref('');
+    const busy = Vue.ref(0);
     const error = Vue.ref('');
-    const form = Vue.reactive({ id: 0, name: '', groupId: '', imageUrl: '', price: '', sortOrder: '' });
+    const form = Vue.reactive({ id: 0, name: '', groupId: '', imageUrl: '', notes: '' });
 
     const groupsPanel = Vue.ref(false);
     const newGroupName = Vue.ref('');
@@ -176,8 +176,7 @@ App.pages['page-admin-dishes'] = {
       form.name = '';
       form.groupId = groups.value.length ? groups.value[0].id : '';
       form.imageUrl = '';
-      form.price = '';
-      form.sortOrder = '';
+      form.notes = '';
       panel.value = true;
     }
 
@@ -188,8 +187,7 @@ App.pages['page-admin-dishes'] = {
       form.name = d.name;
       form.groupId = d.groupId;
       form.imageUrl = d.imageUrl || '';
-      form.price = d.price == null ? '' : String(d.price);
-      form.sortOrder = String(d.sortOrder || 0);
+      form.notes = d.notes || '';
       panel.value = true;
     }
 
@@ -232,8 +230,7 @@ App.pages['page-admin-dishes'] = {
           name: form.name,
           groupId: Number(form.groupId),
           imageUrl: form.imageUrl || null,
-          price: form.price === '' ? null : Number(form.price),
-          sortOrder: form.sortOrder === '' ? 0 : Number(form.sortOrder),
+          notes: form.notes || null,
         };
         if (editing.value) await App.api.patch(`/api/admin/dishes/${form.id}`, payload);
         else await App.api.post('/api/admin/dishes', payload);
@@ -254,6 +251,24 @@ App.pages['page-admin-dishes'] = {
         await loadDishes();
       } catch (err) {
         App.toast.error(err.message);
+      }
+    }
+
+    /** 真删除。只对从未被点过的菜有效；已被点过的后端会拒绝并提示改用下架。 */
+    async function removeDish(d) {
+      const ok = window.confirm(
+        `确定删除「${d.name}」吗？\n\n已被点过的菜无法删除（会让历史订单失去菜名），这种情况请改用「下架」。`
+      );
+      if (!ok) return;
+      busy.value = d.id;
+      try {
+        await App.api.del(`/api/admin/dishes/${d.id}`);
+        App.toast.success('已删除');
+        await loadDishes();
+      } catch (err) {
+        App.toast.error(err.message);
+      } finally {
+        busy.value = 0;
       }
     }
 
@@ -302,10 +317,10 @@ App.pages['page-admin-dishes'] = {
 
     return {
       groups, dishes, loading, filterGroup, filterStatus,
-      panel, editing, saving, uploading, uploadStage, error, form,
+      panel, editing, saving, uploading, uploadStage, busy, error, form,
       groupsPanel, newGroupName,
       fallback, onImgError, loadGroups, loadDishes,
-      openCreate, openEdit, close, onFile, save, toggleStatus,
+      openCreate, openEdit, close, onFile, save, toggleStatus, removeDish,
       addGroup, saveGroup, removeGroup,
     };
   },

@@ -36,7 +36,7 @@ App.pages['page-admin-orders'] = {
                 <b>{{ friendly(order.orderDate) }}</b>
                 <span class="badge" v-if="relative(order.orderDate)">{{ relative(order.orderDate) }}</span>
               </div>
-              <span class="who-small">{{ order.displayName }}<em>{{ roleLabel(order.role) }}</em></span>
+              <span class="who-small">{{ order.displayName }}<em>{{ order.role }}</em></span>
             </div>
 
             <ul class="mini-items">
@@ -70,7 +70,6 @@ App.pages['page-admin-orders'] = {
 
     const friendly = App.util.friendlyDate;
     const relative = App.util.relativeDayLabel;
-    const roleLabel = App.store.roleLabel;
 
     async function load() {
       loading.value = true;
@@ -107,6 +106,6 @@ App.pages['page-admin-orders'] = {
 
     Vue.onMounted(load);
 
-    return { date, from, to, page, pageSize, orders, total, loading, friendly, relative, roleLabel, load, go, clearFilters };
+    return { date, from, to, page, pageSize, orders, total, loading, friendly, relative, load, go, clearFilters };
   },
 };

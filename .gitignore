@@ -22,6 +22,10 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 
+# 数据库备份（含真实数据）
+.backups/
+*.sql.gz
+
 # 编辑器 / 工具本地配置
 .claude/
 .idea/

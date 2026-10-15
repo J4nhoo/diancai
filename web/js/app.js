@@ -24,20 +24,16 @@ App.toast = (function () {
 })();
 
 (function () {
-  const TABS = {
-    family: [
-      { path: '/menu', label: '点菜' },
-      { path: '/my-orders', label: '我的订单' },
-      { path: '/summary', label: '汇总' },
-    ],
-    chef: [{ path: '/summary', label: '菜单汇总' }],
-    admin: [
-      { path: '/summary', label: '汇总' },
-      { path: '/admin/dishes', label: '菜品' },
-      { path: '/admin/users', label: '账号' },
-      { path: '/admin/orders', label: '订单' },
-    ],
-  };
+  // 导航项按【权限】过滤，不再按角色分组 —— 任何账号只要有对应权限就会出现这些入口
+  const ALL_TABS = [
+    { path: '/menu', label: '点菜', perm: 'menu.view' },
+    { path: '/my-orders', label: '我的订单', perm: 'order.submit' },
+    { path: '/summary', label: '汇总', perm: 'summary.view' },
+    { path: '/admin/dishes', label: '菜品', perm: 'menu.manage' },
+    { path: '/admin/orders', label: '订单', perm: 'order.viewAll' },
+    { path: '/admin/users', label: '账号', perm: 'user.manage' },
+    { path: '/admin/audit', label: '记录', perm: 'log.view' },
+  ];
 
   const RootComponent = {
     template: `
@@ -71,8 +67,12 @@ App.toast = (function () {
       const router = App.router;
 
       const user = Vue.computed(() => store.state.user);
-      const roleLabel = Vue.computed(() => (user.value ? store.roleLabel(user.value.role) : ''));
-      const tabs = Vue.computed(() => (user.value ? TABS[user.value.role] || [] : []));
+      // 角色是自由标签，直接显示；所有者额外标一下，便于识别谁有全部权限
+      const roleLabel = Vue.computed(() => {
+        if (!user.value) return '';
+        return user.value.isOwner ? `${user.value.role} · 所有者` : user.value.role;
+      });
+      const tabs = Vue.computed(() => (user.value ? ALL_TABS.filter((t) => store.can(t.perm)) : []));
       // 未登录时由 router 统一指向 /login，因此这里直接取当前路由组件即可
       const view = Vue.computed(() => router.current.value);
       const routeKey = Vue.computed(() => `${router.state.path}?${JSON.stringify(router.state.query)}`);

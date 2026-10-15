@@ -2,15 +2,24 @@
 
 /** 数据库行 -> 对外的 JSON 结构，统一字段命名（下划线转驼峰） */
 
-function shapeUser(row) {
-  return {
+/**
+ * 数据库行 -> 对外的 JSON 结构，统一字段命名（下划线转驼峰）。
+ * permissions 由调用方按需传入（列表页不查权限，避免 N+1）。
+ */
+function shapeUser(row, permissions) {
+  const out = {
     id: row.id,
     username: row.username,
     displayName: row.display_name,
     role: row.role,
+    isOwner: row.is_owner === 1,
     status: row.status,
     createdAt: row.created_at,
   };
+  if (permissions !== undefined) {
+    out.permissions = permissions === null ? [] : permissions;
+  }
+  return out;
 }
 
 function shapeGroup(row) {
@@ -29,10 +38,9 @@ function shapeDish(row) {
     groupName: row.group_name === undefined ? undefined : row.group_name,
     name: row.name,
     imageUrl: row.image_url || null,
-    price: row.price === null || row.price === undefined ? null : Number(row.price),
+    notes: row.notes || null,
     flavor: row.flavor || null,
     status: row.status,
-    sortOrder: row.sort_order,
   };
 }
 

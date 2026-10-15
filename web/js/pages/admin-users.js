@@ -1,11 +1,5 @@
 'use strict';
 
-const ROLE_OPTIONS = [
-  { value: 'family', label: '家人' },
-  { value: 'chef', label: '厨师' },
-  { value: 'admin', label: '管理者' },
-];
-
 App.pages['page-admin-users'] = {
   template: `
     <div class="page">
@@ -22,21 +16,31 @@ App.pages['page-admin-users'] = {
           <div class="admin-main">
             <div class="admin-title">
               {{ u.displayName }}
-              <span class="badge">{{ roleLabel(u.role) }}</span>
+              <span class="badge muted">{{ u.role }}</span>
+              <span class="badge owner" v-if="u.isOwner">所有者</span>
               <span class="badge muted" v-if="u.status !== 1">已停用</span>
               <span class="badge ok" v-if="u.id === me.id">我</span>
             </div>
-            <div class="admin-sub">账号：{{ u.username }}</div>
+            <div class="admin-sub">
+              账号：{{ u.username }}
+              <template v-if="!u.isOwner && u.permissions && u.permissions.length">
+                · {{ u.permissions.length }} 项权限
+              </template>
+              <template v-if="u.isOwner">· 全部权限</template>
+            </div>
           </div>
           <div class="admin-actions">
-            <button type="button" class="btn small" @click="openEdit(u)">编辑</button>
-            <button type="button" class="btn small" @click="resetPassword(u)">改密</button>
-            <button type="button" class="btn small danger" v-if="u.id !== me.id && u.status === 1"
-                    :disabled="busy === u.id" @click="disable(u)">
-              {{ busy === u.id ? '…' : '停用' }}
-            </button>
-            <button type="button" class="btn small" v-if="u.id !== me.id && u.status !== 1"
-                    :disabled="busy === u.id" @click="enable(u)">启用</button>
+            <template v-if="!u.isOwner">
+              <button type="button" class="btn small" @click="openEdit(u)">编辑</button>
+              <button type="button" class="btn small" @click="resetPassword(u)">改密</button>
+              <button type="button" class="btn small danger" v-if="u.id !== me.id && u.status === 1"
+                      :disabled="busy === u.id" @click="disable(u)">
+                {{ busy === u.id ? '…' : '停用' }}
+              </button>
+              <button type="button" class="btn small" v-if="u.id !== me.id && u.status !== 1"
+                      :disabled="busy === u.id" @click="enable(u)">启用</button>
+            </template>
+            <span v-else class="hint-inline">不可修改</span>
           </div>
         </li>
       </ul>
@@ -57,16 +61,31 @@ App.pages['page-admin-users'] = {
           </label>
 
           <label class="field">
-            <span>角色</span>
-            <select v-model="form.role" :disabled="editing && form.id === me.id">
-              <option v-for="opt in roleOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-            </select>
+            <span>身份标签（只是称呼，不影响权限）</span>
+            <input v-model.trim="form.role" type="text" maxlength="32"
+                   placeholder="例如：姐姐、厨师、后勤" />
           </label>
 
           <label class="field" v-if="!editing">
             <span>初始密码</span>
             <input v-model="form.password" type="text" placeholder="至少 6 位" />
           </label>
+
+          <div class="perm-group" v-if="canGrant">
+            <div class="perm-head">
+              <span>权限</span>
+              <button type="button" class="link-sm" @click="toggleAll">{{ allChecked ? '全不选' : '全选' }}</button>
+            </div>
+            <label v-for="p in permissionCatalog" :key="p.key" class="perm-item">
+              <input type="checkbox" :value="p.key" v-model="form.permissions" />
+              <span class="perm-body">
+                <b>{{ p.label }}</b>
+                <em>{{ p.desc }}</em>
+              </span>
+            </label>
+            <p class="perm-note">权限改动【立即生效】，对方无需重新登录。</p>
+          </div>
+          <p v-else class="perm-note muted">你没有「分配权限」的权限，无法修改权限。</p>
 
           <p v-if="error" class="form-error">{{ error }}</p>
 
@@ -89,10 +108,20 @@ App.pages['page-admin-users'] = {
     const editing = Vue.ref(false);
     const saving = Vue.ref(false);
     const error = Vue.ref('');
-    const form = Vue.reactive({ id: 0, username: '', displayName: '', role: 'family', password: '' });
+    const permissionCatalog = Vue.ref([]);
+    const form = Vue.reactive({
+      id: 0, username: '', displayName: '', role: '家人', password: '', permissions: [],
+    });
     const me = Vue.computed(() => store.state.user);
+    const canGrant = Vue.computed(() => store.can('user.grant'));
 
-    const roleLabel = store.roleLabel;
+    const allChecked = Vue.computed(
+      () => permissionCatalog.value.length > 0 && form.permissions.length === permissionCatalog.value.length
+    );
+
+    function toggleAll() {
+      form.permissions = allChecked.value ? [] : permissionCatalog.value.map((p) => p.key);
+    }
 
     async function load() {
       loading.value = true;
@@ -106,12 +135,22 @@ App.pages['page-admin-users'] = {
       }
     }
 
+    async function loadCatalog() {
+      try {
+        const data = await App.api.get('/api/admin/permissions');
+        permissionCatalog.value = data.permissions || [];
+      } catch (_) {
+        permissionCatalog.value = [];
+      }
+    }
+
     function resetForm() {
       form.id = 0;
       form.username = '';
       form.displayName = '';
-      form.role = 'family';
+      form.role = '家人';
       form.password = '';
+      form.permissions = [];
       error.value = '';
     }
 
@@ -129,6 +168,7 @@ App.pages['page-admin-users'] = {
       form.displayName = u.displayName;
       form.role = u.role;
       form.password = '';
+      form.permissions = [...(u.permissions || [])];
       panel.value = true;
     }
 
@@ -141,17 +181,18 @@ App.pages['page-admin-users'] = {
       saving.value = true;
       try {
         if (editing.value) {
-          await App.api.patch(`/api/admin/users/${form.id}`, {
-            displayName: form.displayName,
-            role: form.role,
-          });
+          const payload = { displayName: form.displayName, role: form.role };
+          if (canGrant.value) payload.permissions = form.permissions;
+          await App.api.patch(`/api/admin/users/${form.id}`, payload);
         } else {
-          await App.api.post('/api/admin/users', {
+          const payload = {
             username: form.username,
             displayName: form.displayName,
             role: form.role,
             password: form.password,
-          });
+          };
+          if (canGrant.value) payload.permissions = form.permissions;
+          await App.api.post('/api/admin/users', payload);
         }
         App.toast.success('已保存');
         panel.value = false;
@@ -202,11 +243,14 @@ App.pages['page-admin-users'] = {
       }
     }
 
-    Vue.onMounted(load);
+    Vue.onMounted(async () => {
+      await Promise.all([load(), loadCatalog()]);
+    });
 
     return {
-      users, loading, busy, panel, editing, saving, error, form, me, roleOptions: ROLE_OPTIONS,
-      roleLabel, openCreate, openEdit, close, save, resetPassword, disable, enable,
+      users, loading, busy, panel, editing, saving, error, form, me, canGrant,
+      permissionCatalog, allChecked, toggleAll,
+      openCreate, openEdit, close, save, resetPassword, disable, enable,
     };
   },
 };

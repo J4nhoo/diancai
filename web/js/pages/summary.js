@@ -29,6 +29,8 @@ App.pages['page-summary'] = {
             <h3 class="group-title">{{ group.groupName }}</h3>
             <ul class="summary-list">
               <li v-for="dish in group.dishes" :key="dish.dishId" class="summary-item">
+                <img class="summary-thumb" :src="dish.imageUrl || fallback(dish.dishName)"
+                     :alt="dish.dishName" @error="onImgError($event, dish.dishName)" />
                 <span class="dish-name">{{ dish.dishName }}</span>
                 <span class="summary-qty">×{{ dish.totalQuantity }}</span>
               </li>
@@ -38,7 +40,7 @@ App.pages['page-summary'] = {
           <section v-if="notes.length" class="group">
             <h3 class="group-title">忌口 / 备注</h3>
             <ul class="note-list">
-              <li v-for="(note, i) in notes" :key="i" class="note-item" :class="{ chef: role === 'chef' }">
+              <li v-for="(note, i) in notes" :key="i" class="note-item">
                 <b>{{ note.displayName }}</b>
                 <span>{{ note.notes }}</span>
               </li>
@@ -57,7 +59,6 @@ App.pages['page-summary'] = {
     const date = Vue.ref(App.router.state.query.date || App.util.todayStr());
     const data = Vue.ref({});
     const loading = Vue.ref(true);
-    const role = Vue.computed(() => App.store.state.user.role);
     const relative = Vue.computed(() => App.util.relativeDayLabel(date.value));
 
     const groups = Vue.computed(() =>
@@ -89,6 +90,13 @@ App.pages['page-summary'] = {
 
     Vue.onMounted(load);
 
-    return { date, data, loading, groups, notes, role, relative, load, copy };
+    function fallback(name) {
+      return App.util.fallbackImage(name);
+    }
+    function onImgError(event, name) {
+      event.target.src = App.util.fallbackImage(name);
+    }
+
+    return { date, data, loading, groups, notes, relative, load, copy, fallback, onImgError };
   },
 };

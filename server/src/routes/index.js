@@ -8,6 +8,7 @@ const authRoutes = require('./auth');
 const menuRoutes = require('./menu');
 const orderRoutes = require('./orders');
 const summaryRoutes = require('./summary');
+const reviewRoutes = require('./reviews');
 const adminRoutes = require('./admin');
 
 const router = express.Router();
@@ -25,6 +26,9 @@ router.use('/auth', authRoutes);
 router.use('/menu', menuRoutes);
 router.use('/orders', orderRoutes);
 router.use('/summary', summaryRoutes);
+router.use('/reviews', reviewRoutes);
+// /admin 下各路由的权限不同，逐个挂 requirePermission（在 admin.js 内部），
+// 这里只统一要求已登录
 router.use('/admin', authenticate, adminRoutes);
 
 module.exports = router;

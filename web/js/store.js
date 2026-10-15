@@ -1,31 +1,62 @@
 'use strict';
 
-/** 登录态与当前用户（响应式） */
+/** 登录态与当前用户（响应式）。
+ *
+ * 鉴权一律走权限（permissions）而非角色 —— 角色（role）只是显示标签，
+ * 用户可以随便起名（「姐姐」「厨师」），不参与任何判断。
+ * 所有者（isOwner）拥有全部权限，后端会返回空 permissions 数组并由 isOwner 短路。
+ */
 
 App.store = (function () {
+  const PERMISSION_LABELS = {
+    'menu.view': '查看菜单',
+    'order.submit': '点菜',
+    'summary.view': '查看汇总',
+    'order.viewAll': '查看全部订单',
+    'menu.manage': '管理菜品与分组',
+    'user.manage': '管理账号',
+    'user.grant': '分配权限',
+    'log.view': '查看操作记录',
+  };
+
   const state = Vue.reactive({
-    user: null, // {id, username, displayName, role}
-    ready: false, // 是否已完成首次登录状态探测
+    user: null, // {id, username, displayName, role, isOwner, permissions[]}
+    ready: false,
   });
 
-  const ROLE_LABEL = { family: '家人', chef: '厨师', admin: '管理者' };
-
-  function roleLabel(role) {
-    return ROLE_LABEL[role] || role;
+  /** 当前用户是否拥有某项权限；owner 恒为真 */
+  function can(perm) {
+    const u = state.user;
+    if (!u) return false;
+    if (!perm) return true;
+    if (u.isOwner) return true;
+    const list = u.permissions || [];
+    return Array.isArray(perm) ? perm.some((p) => list.includes(p)) : list.includes(perm);
   }
 
-  function is(role) {
-    return !!state.user && state.user.role === role;
-  }
+  /** 侧边导航与落地页的候选顺序，取第一个有权限的 */
+  const HOME_CANDIDATES = ['/menu', '/summary', '/admin/dishes', '/admin/orders', '/admin/users', '/admin/audit'];
 
-  function can(roles) {
-    return !!state.user && (!roles || roles.includes(state.user.role));
-  }
-
-  /** 每个角色的默认落地页（不含 #） */
+  /** 当前用户的默认落地页（不含 #） */
   function homePath() {
     if (!state.user) return '/login';
-    return state.user.role === 'family' ? '/menu' : '/summary';
+    const hit = HOME_CANDIDATES.find((p) => can(PATH_PERMISSION[p]));
+    return hit || '/summary';
+  }
+
+  /** 路径 → 所需权限（与 router.js 的路由表保持一致） */
+  const PATH_PERMISSION = {
+    '/menu': 'menu.view',
+    '/my-orders': 'order.submit',
+    '/summary': 'summary.view',
+    '/admin/dishes': 'menu.manage',
+    '/admin/users': 'user.manage',
+    '/admin/orders': 'order.viewAll',
+    '/admin/audit': 'log.view',
+  };
+
+  function permissionLabel(key) {
+    return PERMISSION_LABELS[key] || key;
   }
 
   async function loadMe() {
@@ -66,5 +97,16 @@ App.store = (function () {
     state.user = user;
   }
 
-  return { state, loadMe, login, logout, changePassword, roleLabel, is, can, homePath, setUser };
+  return {
+    state,
+    loadMe,
+    login,
+    logout,
+    changePassword,
+    can,
+    homePath,
+    permissionLabel,
+    setUser,
+    PATH_PERMISSION,
+  };
 })();

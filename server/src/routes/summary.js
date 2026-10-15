@@ -2,18 +2,17 @@
 
 const express = require('express');
 const db = require('../db');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, requirePermission } = require('../middleware/auth');
 const { asyncHandler, ok } = require('../utils/http');
 const { dateStr, todayStr } = require('../utils/validate');
 
 const router = express.Router();
 
-router.use(authenticate);
+router.use(authenticate, requirePermission('summary.view'));
 
 const MERGED_SQL = `
   SELECT d.id AS dish_id, d.name AS dish_name, d.image_url,
          g.id AS group_id, g.name AS group_name, g.sort_order AS group_sort,
-         d.sort_order AS dish_sort,
          SUM(oi.quantity) AS total_quantity,
          COUNT(DISTINCT o.id) AS order_count
   FROM order_items oi
@@ -21,8 +20,8 @@ const MERGED_SQL = `
   JOIN dishes d ON d.id = oi.dish_id
   LEFT JOIN dish_groups g ON g.id = d.group_id
   WHERE o.order_date = ?
-  GROUP BY d.id, d.name, d.image_url, g.id, g.name, g.sort_order, d.sort_order
-  ORDER BY g.sort_order, g.id, d.sort_order, d.id`;
+  GROUP BY d.id, d.name, d.image_url, g.id, g.name, g.sort_order
+  ORDER BY g.sort_order, g.id, d.id`;
 
 const NOTES_SQL = `
   SELECT u.display_name, u.username, o.notes
