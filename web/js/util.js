@@ -4,6 +4,27 @@
 window.App = { pages: {} };
 
 App.util = (function () {
+  // 餐次。与后端 server/src/meals.js 保持一致，改的时候两处都要动
+  // （前端不引入构建工具，无法共享模块）
+  const MEALS = [
+    { key: 'breakfast', label: '早餐' },
+    { key: 'lunch', label: '午餐' },
+    { key: 'dinner', label: '晚餐' },
+  ];
+  const MEAL_LABEL = Object.fromEntries(MEALS.map((m) => [m.key, m.label]));
+
+  /** 按小时推当前餐次。与后端 currentMeal() 同规则（10 点 / 16 点分界）。 */
+  function currentMeal(date) {
+    const hour = (date || new Date()).getHours();
+    if (hour < 10) return 'breakfast';
+    if (hour < 16) return 'lunch';
+    return 'dinner';
+  }
+
+  function mealLabel(key) {
+    return MEAL_LABEL[key] || key || '';
+  }
+
   function pad(n) {
     return String(n).padStart(2, '0');
   }
@@ -151,6 +172,6 @@ App.util = (function () {
 
   return {
     todayStr, addDays, friendlyDate, relativeDayLabel, copyText, toDateStr, fallbackImage,
-    compressImage,
+    compressImage, MEALS, currentMeal, mealLabel,
   };
 })();

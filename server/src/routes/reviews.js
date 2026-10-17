@@ -5,6 +5,7 @@ const db = require('../db');
 const { authenticate, requirePermission } = require('../middleware/auth');
 const { asyncHandler, ok, badRequest, notFound, forbidden } = require('../utils/http');
 const { int, str, dateStr } = require('../utils/validate');
+const { isValidMeal, MEALS } = require('../meals');
 
 const router = express.Router();
 
@@ -17,15 +18,15 @@ router.use(authenticate);
  * 不代表能评价任意菜。必须该菜出现在自己已提交的订单里才行。
  * 用订单日期定位是哪一餐 —— 同一个人同一道菜，不同日期可以各评一次。
  */
-async function assertOrdered(userId, dishId, orderDate) {
+async function assertOrdered(userId, dishId, orderDate, mealType) {
   const hit = await db.queryOne(
     `SELECT o.id FROM orders o
      JOIN order_items oi ON oi.order_id = o.id
-     WHERE o.user_id = ? AND oi.dish_id = ? AND o.order_date = ? AND o.status = 1
+     WHERE o.user_id = ? AND oi.dish_id = ? AND o.order_date = ? AND o.meal_type = ? AND o.status = 1
      LIMIT 1`,
-    [userId, dishId, orderDate]
+    [userId, dishId, orderDate, mealType]
   );
-  if (!hit) throw forbidden('只能评价自己点过的菜');
+  if (!hit) throw forbidden('只能评价自己点过的那一餐的菜');
 }
 
 /** 某道菜的评价列表 + 平均分 */
@@ -38,12 +39,12 @@ router.get(
     if (!dish) throw notFound('菜品不存在');
 
     const rows = await db.query(
-      `SELECT r.id, r.rating, r.content, r.order_date, r.created_at, r.user_id,
+      `SELECT r.id, r.rating, r.content, r.order_date, r.meal_type, r.created_at, r.user_id,
               u.display_name, u.username
        FROM dish_reviews r
        JOIN users u ON u.id = r.user_id
        WHERE r.dish_id = ?
-       ORDER BY r.order_date DESC, r.id DESC
+       ORDER BY r.order_date DESC, FIELD(r.meal_type,'breakfast','lunch','dinner'), r.id DESC
        LIMIT 100`,
       [dishId]
     );
@@ -59,11 +60,13 @@ router.get(
       count,
       // 保留一位小数；无评价时为 null
       average: count ? Math.round(Number(stat.avg_rating) * 10) / 10 : null,
+      meals: MEALS,
       reviews: rows.map((r) => ({
         id: r.id,
         rating: r.rating,
         content: r.content || '',
         orderDate: r.order_date,
+        mealType: r.meal_type,
         createdAt: r.created_at,
         userId: r.user_id,
         displayName: r.display_name,
@@ -82,26 +85,28 @@ router.post(
     const body = req.body || {};
     const dishId = int(body.dishId, { name: '菜品', min: 1 });
     const orderDate = dateStr(body.orderDate, { name: '用餐日期' });
+    const mealType = body.mealType;
+    if (!isValidMeal(mealType)) throw badRequest('请选择餐次');
     const rating = int(body.rating, { name: '评分', min: 1, max: 5 });
     const content = str(body.content, { name: '评论', required: false, max: 500 }) || null;
 
     const dish = await db.queryOne('SELECT id, name FROM dishes WHERE id = ?', [dishId]);
     if (!dish) throw notFound('菜品不存在');
 
-    await assertOrdered(req.user.id, dishId, orderDate);
+    await assertOrdered(req.user.id, dishId, orderDate, mealType);
 
     await db.query(
-      `INSERT INTO dish_reviews (dish_id, user_id, order_date, rating, content)
-       VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO dish_reviews (dish_id, user_id, order_date, meal_type, rating, content)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE rating = VALUES(rating), content = VALUES(content)`,
-      [dishId, req.user.id, orderDate, rating, content]
+      [dishId, req.user.id, orderDate, mealType, rating, content]
     );
 
     const row = await db.queryOne(
-      'SELECT id FROM dish_reviews WHERE dish_id = ? AND user_id = ? AND order_date = ?',
-      [dishId, req.user.id, orderDate]
+      'SELECT id FROM dish_reviews WHERE dish_id = ? AND user_id = ? AND order_date = ? AND meal_type = ?',
+      [dishId, req.user.id, orderDate, mealType]
     );
-    ok(res, { id: row.id, dishId, dishName: dish.name, orderDate, rating, content });
+    ok(res, { id: row.id, dishId, dishName: dish.name, orderDate, mealType, rating, content });
   })
 );
 

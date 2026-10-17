@@ -23,7 +23,11 @@ const SEED_GROUPS = [
 ];
 
 /** 按顺序执行的迁移脚本（文件名在 scripts/ 下）。新增迁移请追加到末尾。 */
-const MIGRATIONS = ['migrate-001-permissions.js', 'migrate-002-dish-fields-and-reviews.js'];
+const MIGRATIONS = [
+  'migrate-001-permissions.js',
+  'migrate-002-dish-fields-and-reviews.js',
+  'migrate-003-meal-types.js',
+];
 
 function connectionOptions(extra) {
   return {

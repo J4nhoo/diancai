@@ -5,6 +5,7 @@ const db = require('../db');
 const { authenticate, requirePermission } = require('../middleware/auth');
 const { asyncHandler, ok, badRequest, notFound, forbidden } = require('../utils/http');
 const { dateStr, int, str, todayStr } = require('../utils/validate');
+const { isValidMeal, currentMeal } = require('../meals');
 
 const router = express.Router();
 
@@ -28,21 +29,31 @@ async function loadItems(orderId) {
   }));
 }
 
-async function loadOrder(userId, date) {
+async function loadOrder(userId, date, mealType) {
   const order = await db.queryOne(
-    'SELECT id, order_date, notes, status FROM orders WHERE user_id = ? AND order_date = ? AND status = 1',
-    [userId, date]
+    `SELECT id, order_date, meal_type, notes, status FROM orders
+     WHERE user_id = ? AND order_date = ? AND meal_type = ? AND status = 1`,
+    [userId, date, mealType]
   );
   if (!order) return null;
   return {
     orderDate: order.order_date,
+    mealType: order.meal_type,
     notes: order.notes || '',
     items: await loadItems(order.id),
   };
 }
 
-/** 解析并校验提交的菜品明细：去重合并、数量 1..99、菜品必须存在且上架 */
-async function normalizeItems(rawItems) {
+/** 从 query 取餐次，缺省时按当前时间推 */
+function mealFromQuery(req) {
+  const raw = req.query.meal;
+  if (raw === undefined || raw === '') return currentMeal();
+  if (!isValidMeal(raw)) throw badRequest('餐次不合法');
+  return raw;
+}
+
+/** 解析并校验提交的菜品明细：去重合并、数量 1..99、菜品必须存在、上架且适用于该餐次 */
+async function normalizeItems(rawItems, mealType) {
   if (!Array.isArray(rawItems) || rawItems.length === 0) {
     throw badRequest('请至少选择一道菜');
   }
@@ -59,14 +70,18 @@ async function normalizeItems(rawItems) {
 
   const ids = items.map((i) => i.dishId);
   const placeholders = ids.map(() => '?').join(',');
+  // 除了上架，还要确认这批菜适用于当前餐次（早餐不该点到只做午晚餐的菜）
   const [rows] = await db.pool.query(
-    `SELECT id FROM dishes WHERE status = 1 AND id IN (${placeholders})`,
-    ids
+    `SELECT id FROM dishes
+     WHERE status = 1 AND FIND_IN_SET(?, meal_types) AND id IN (${placeholders})`,
+    [mealType, ...ids]
   );
   const available = new Set(rows.map((r) => r.id));
 
   for (const item of items) {
-    if (!available.has(item.dishId)) throw badRequest('存在已下架或不存在的菜品，请刷新菜单后重试');
+    if (!available.has(item.dishId)) {
+      throw badRequest('存在已下架、不属于该餐次或不存在的菜品，请刷新菜单后重试');
+    }
   }
   return items;
 }
@@ -86,14 +101,16 @@ router.post(
   asyncHandler(async (req, res) => {
     const date = dateStr(req.body && req.body.orderDate);
     if (date < todayStr()) throw badRequest('不能提交过去日期的订单');
+    const mealType = req.body && req.body.mealType;
+    if (!isValidMeal(mealType)) throw badRequest('请选择餐次');
 
     const notes = str(req.body && req.body.notes, { name: '忌口/备注', required: false, max: 500 }) || null;
-    const items = await normalizeItems(req.body && req.body.items);
+    const items = await normalizeItems(req.body && req.body.items, mealType);
 
     await db.withTransaction(async (conn) => {
       const [existing] = await conn.query(
-        'SELECT id FROM orders WHERE user_id = ? AND order_date = ?',
-        [req.user.id, date]
+        'SELECT id FROM orders WHERE user_id = ? AND order_date = ? AND meal_type = ?',
+        [req.user.id, date, mealType]
       );
       let orderId;
       if (existing.length) {
@@ -104,15 +121,15 @@ router.post(
         );
       } else {
         const [result] = await conn.query(
-          'INSERT INTO orders (user_id, order_date, notes, status) VALUES (?, ?, ?, 1)',
-          [req.user.id, date, notes]
+          'INSERT INTO orders (user_id, order_date, meal_type, notes, status) VALUES (?, ?, ?, ?, 1)',
+          [req.user.id, date, mealType, notes]
         );
         orderId = result.insertId;
       }
       await writeItems(conn, orderId, items);
     });
 
-    ok(res, await loadOrder(req.user.id, date));
+    ok(res, await loadOrder(req.user.id, date, mealType));
   })
 );
 
@@ -135,7 +152,8 @@ router.get(
     }
 
     const orders = await db.query(
-      `SELECT id, order_date, notes FROM orders WHERE ${where.join(' AND ')} ORDER BY order_date DESC LIMIT 100`,
+      `SELECT id, order_date, meal_type, notes FROM orders WHERE ${where.join(' AND ')}
+       ORDER BY order_date DESC, FIELD(meal_type,'breakfast','lunch','dinner') LIMIT 100`,
       params
     );
 
@@ -144,6 +162,7 @@ router.get(
     for (const order of orders) {
       data.push({
         orderDate: order.order_date,
+        mealType: order.meal_type,
         notes: order.notes || '',
         editable: order.order_date >= today,
         items: await loadItems(order.id),
@@ -158,9 +177,10 @@ router.get(
   '/mine/:date',
   asyncHandler(async (req, res) => {
     const date = dateStr(req.params.date);
-    const order = await loadOrder(req.user.id, date);
+    const mealType = mealFromQuery(req);
+    const order = await loadOrder(req.user.id, date, mealType);
     if (!order) {
-      return ok(res, { orderDate: date, notes: '', items: [], editable: date >= todayStr() });
+      return ok(res, { orderDate: date, mealType, notes: '', items: [], editable: date >= todayStr() });
     }
     ok(res, { ...order, editable: date >= todayStr() });
   })
@@ -175,23 +195,24 @@ router.put(
   '/mine/:date',
   asyncHandler(async (req, res) => {
     const date = dateStr(req.params.date);
+    const mealType = mealFromQuery(req);
     assertEditable(date);
 
     const existing = await db.queryOne(
-      'SELECT id FROM orders WHERE user_id = ? AND order_date = ? AND status = 1',
-      [req.user.id, date]
+      'SELECT id FROM orders WHERE user_id = ? AND order_date = ? AND meal_type = ? AND status = 1',
+      [req.user.id, date, mealType]
     );
-    if (!existing) throw notFound('该日期没有你的订单');
+    if (!existing) throw notFound('该餐次没有你的订单');
 
     const notes = str(req.body && req.body.notes, { name: '忌口/备注', required: false, max: 500 }) || null;
-    const items = await normalizeItems(req.body && req.body.items);
+    const items = await normalizeItems(req.body && req.body.items, mealType);
 
     await db.withTransaction(async (conn) => {
       await conn.query('UPDATE orders SET notes = ? WHERE id = ?', [notes, existing.id]);
       await writeItems(conn, existing.id, items);
     });
 
-    ok(res, await loadOrder(req.user.id, date));
+    ok(res, await loadOrder(req.user.id, date, mealType));
   })
 );
 
@@ -200,12 +221,13 @@ router.delete(
   '/mine/:date',
   asyncHandler(async (req, res) => {
     const date = dateStr(req.params.date);
+    const mealType = mealFromQuery(req);
     assertEditable(date);
 
     const result = await db.withTransaction(async (conn) => {
       const [rows] = await conn.query(
-        'SELECT id FROM orders WHERE user_id = ? AND order_date = ? AND status = 1',
-        [req.user.id, date]
+        'SELECT id FROM orders WHERE user_id = ? AND order_date = ? AND meal_type = ? AND status = 1',
+        [req.user.id, date, mealType]
       );
       if (!rows.length) return 0;
       await conn.query('DELETE FROM order_items WHERE order_id = ?', [rows[0].id]);
@@ -213,7 +235,7 @@ router.delete(
       return 1;
     });
 
-    if (!result) throw notFound('该日期没有你的订单');
+    if (!result) throw notFound('该餐次没有你的订单');
     ok(res, { deleted: true });
   })
 );

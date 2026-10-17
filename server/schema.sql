@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS dishes (
   name       VARCHAR(64)  NOT NULL              COMMENT '菜名',
   image_url  VARCHAR(255) NULL                  COMMENT '图片地址，仅存 URL，文件在服务器/Nginx',
   notes      VARCHAR(500) NULL                  COMMENT '菜品备注',
+  meal_types VARCHAR(24)  NOT NULL DEFAULT 'lunch,dinner' COMMENT '适用餐次，逗号分隔（breakfast/lunch/dinner）',
   flavor     JSON         NULL                  COMMENT '预留：口味/调料结构化配置',
   status     TINYINT      NOT NULL DEFAULT 1    COMMENT '1 上架，0 下架',
   created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -75,19 +76,20 @@ CREATE TABLE IF NOT EXISTS dishes (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='菜品';
 
 -- ---------- 订单 ----------
--- 一人一天一单：唯一键 (order_date, user_id)。
--- 提交为幂等 upsert，家人改"今天吃什么"不会产生重复单。
--- 将来若要区分午餐/晚餐，加 meal_type 列并把唯一键扩为三列即可。
+-- 一人一天一个餐次一单：唯一键 (order_date, meal_type, user_id)。
+-- 提交为幂等 upsert，家人改"今天午餐吃什么"不会产生重复单；
+-- 同一天的早餐、午餐、晚餐是三份互不干扰的订单。
 CREATE TABLE IF NOT EXISTS orders (
   id         INT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id    INT UNSIGNED NOT NULL              COMMENT '下单人',
   order_date DATE         NOT NULL              COMMENT '用餐日期',
+  meal_type  ENUM('breakfast','lunch','dinner') NOT NULL DEFAULT 'lunch' COMMENT '餐次：早/午/晚',
   notes      VARCHAR(500) NULL                  COMMENT '忌口/整体备注',
   status     TINYINT      NOT NULL DEFAULT 1    COMMENT '1 有效，0 已撤销',
   created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  UNIQUE KEY uk_orders_date_user (order_date, user_id),
+  UNIQUE KEY uk_orders_date_meal_user (order_date, meal_type, user_id),
   KEY idx_orders_date (order_date, status),
   CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单';
@@ -149,12 +151,13 @@ CREATE TABLE IF NOT EXISTS dish_reviews (
   dish_id    INT UNSIGNED NOT NULL,
   user_id    INT UNSIGNED NOT NULL,
   order_date DATE         NOT NULL              COMMENT '针对哪一餐的评价',
+  meal_type  ENUM('breakfast','lunch','dinner') NOT NULL DEFAULT 'lunch' COMMENT '餐次：早/午/晚',
   rating     TINYINT      NOT NULL              COMMENT '1-5 星',
   content    VARCHAR(500) NULL                  COMMENT '文字评论',
   created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  UNIQUE KEY uk_review_dish_user_date (dish_id, user_id, order_date),
+  UNIQUE KEY uk_review_dish_date_meal_user (dish_id, order_date, meal_type, user_id),
   KEY idx_review_dish (dish_id, created_at),
   KEY idx_review_user (user_id),
   CONSTRAINT fk_review_dish FOREIGN KEY (dish_id) REFERENCES dishes (id) ON DELETE CASCADE,

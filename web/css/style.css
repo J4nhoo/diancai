@@ -1344,3 +1344,85 @@ textarea:focus {
 .audit-del {
   margin-left: auto;
 }
+
+/* ---------- 餐次切换 ---------- */
+.meal-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.meal-tab {
+  flex: 1;
+  padding: 9px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.meal-tab.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  font-weight: 600;
+}
+
+.meal-tabs.small .meal-tab {
+  flex: 0 1 auto;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+/* 菜品列表里的餐次小标签 */
+.meal-chips {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.meal-chip {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #5b6b7d;
+}
+
+/* 表单里的餐次多选 */
+.meal-checks {
+  display: flex;
+  gap: 16px;
+  padding: 6px 0;
+}
+
+.meal-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.meal-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
+
+/* 订单卡片上的餐次标识 */
+.badge.meal {
+  background: #eef2f7;
+  color: #5b6b7d;
+}
+
+/* 订单明细里的单菜口味备注 */
+.mini-items .flavor {
+  font-style: normal;
+  color: var(--muted);
+  font-size: 12px;
+}

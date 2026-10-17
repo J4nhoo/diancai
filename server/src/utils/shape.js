@@ -39,6 +39,8 @@ function shapeDish(row) {
     name: row.name,
     imageUrl: row.image_url || null,
     notes: row.notes || null,
+    // 适用餐次数组；调用方若未查该列则回退为午晚餐
+    mealTypes: row.meal_types ? String(row.meal_types).split(',') : ['lunch', 'dinner'],
     flavor: row.flavor || null,
     status: row.status,
   };

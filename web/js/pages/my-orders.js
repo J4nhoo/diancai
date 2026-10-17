@@ -18,10 +18,11 @@ App.pages['page-my-orders'] = {
       <div v-else-if="!orders.length" class="empty">这段时间还没有点过菜。</div>
 
       <ul class="order-list" v-else>
-        <li v-for="order in orders" :key="order.orderDate" class="order-card">
+        <li v-for="order in orders" :key="order.orderDate + '|' + order.mealType" class="order-card">
           <div class="order-head">
             <div>
               <b>{{ friendly(order.orderDate) }}</b>
+              <span class="badge meal">{{ mealLabel(order.mealType) }}</span>
               <span class="badge" v-if="relative(order.orderDate)">{{ relative(order.orderDate) }}</span>
             </div>
             <span class="badge" :class="order.editable ? 'ok' : 'muted'">
@@ -59,6 +60,7 @@ App.pages['page-my-orders'] = {
 
     const friendly = App.util.friendlyDate;
     const relative = App.util.relativeDayLabel;
+    const mealLabel = App.util.mealLabel;
 
     async function load() {
       loading.value = true;
@@ -92,6 +94,6 @@ App.pages['page-my-orders'] = {
 
     Vue.onMounted(load);
 
-    return { from, to, orders, loading, busy, friendly, relative, load, remove, reOrder };
+    return { from, to, orders, loading, busy, friendly, relative, mealLabel, load, remove, reOrder };
   },
 };

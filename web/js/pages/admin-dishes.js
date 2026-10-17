@@ -41,6 +41,9 @@ App.pages['page-admin-dishes'] = {
               {{ d.groupName || '未分组' }}
               <template v-if="d.notes"> · {{ d.notes }}</template>
             </div>
+            <div class="meal-chips">
+              <span v-for="m in d.mealTypes" :key="m" class="meal-chip">{{ mealLabel(m) }}</span>
+            </div>
           </div>
           <div class="admin-actions">
             <button type="button" class="btn small" @click="openEdit(d)">编辑</button>
@@ -84,6 +87,16 @@ App.pages['page-admin-dishes'] = {
             <span>备注（可选）</span>
             <textarea v-model="form.notes" rows="2" maxlength="500" placeholder="例如：孩子爱吃、少放辣"></textarea>
           </label>
+
+          <div class="field">
+            <span>适用餐次（至少选一个）</span>
+            <div class="meal-checks">
+              <label v-for="m in meals" :key="m.key" class="meal-check">
+                <input type="checkbox" :value="m.key" v-model="form.mealTypes" />
+                <span>{{ m.label }}</span>
+              </label>
+            </div>
+          </div>
 
           <p v-if="error" class="form-error">{{ error }}</p>
 
@@ -137,7 +150,9 @@ App.pages['page-admin-dishes'] = {
     const uploadStage = Vue.ref('');
     const busy = Vue.ref(0);
     const error = Vue.ref('');
-    const form = Vue.reactive({ id: 0, name: '', groupId: '', imageUrl: '', notes: '' });
+    const meals = App.util.MEALS;
+    const mealLabel = App.util.mealLabel;
+    const form = Vue.reactive({ id: 0, name: '', groupId: '', imageUrl: '', notes: '', mealTypes: ['lunch', 'dinner'] });
 
     const groupsPanel = Vue.ref(false);
     const newGroupName = Vue.ref('');
@@ -177,6 +192,7 @@ App.pages['page-admin-dishes'] = {
       form.groupId = groups.value.length ? groups.value[0].id : '';
       form.imageUrl = '';
       form.notes = '';
+      form.mealTypes = ['lunch', 'dinner'];
       panel.value = true;
     }
 
@@ -188,6 +204,7 @@ App.pages['page-admin-dishes'] = {
       form.groupId = d.groupId;
       form.imageUrl = d.imageUrl || '';
       form.notes = d.notes || '';
+      form.mealTypes = [...(d.mealTypes || ['lunch', 'dinner'])];
       panel.value = true;
     }
 
@@ -223,6 +240,7 @@ App.pages['page-admin-dishes'] = {
       error.value = '';
       if (!form.name) return (error.value = '请填写菜名');
       if (!form.groupId) return (error.value = '请选择分组');
+      if (!form.mealTypes.length) return (error.value = '至少要选择一个适用餐次');
 
       saving.value = true;
       try {
@@ -231,6 +249,7 @@ App.pages['page-admin-dishes'] = {
           groupId: Number(form.groupId),
           imageUrl: form.imageUrl || null,
           notes: form.notes || null,
+          mealTypes: form.mealTypes,
         };
         if (editing.value) await App.api.patch(`/api/admin/dishes/${form.id}`, payload);
         else await App.api.post('/api/admin/dishes', payload);
@@ -316,7 +335,7 @@ App.pages['page-admin-dishes'] = {
     });
 
     return {
-      groups, dishes, loading, filterGroup, filterStatus,
+      groups, dishes, loading, filterGroup, filterStatus, meals, mealLabel,
       panel, editing, saving, uploading, uploadStage, busy, error, form,
       groupsPanel, newGroupName,
       fallback, onImgError, loadGroups, loadDishes,

@@ -26,6 +26,9 @@ Thumbs.db
 .backups/
 *.sql.gz
 
+# 运行时生成的局域网地址（随网络变化，无入库价值）
+server/.lan-url
+
 # 编辑器 / 工具本地配置
 .claude/
 .idea/

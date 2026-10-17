@@ -10,6 +10,12 @@
 App.pages['page-menu'] = {
   template: `
     <div class="page">
+      <div class="meal-tabs">
+        <button v-for="m in meals" :key="m.key" type="button"
+                class="meal-tab" :class="{ active: m.key === meal }"
+                @click="switchMeal(m.key)">{{ m.label }}</button>
+      </div>
+
       <div class="toolbar">
         <label class="date-pick">
           <span>用餐日期</span>
@@ -24,7 +30,7 @@ App.pages['page-menu'] = {
       </p>
 
       <div v-if="loading" class="loading">加载中…</div>
-      <div v-else-if="!groups.length" class="empty">还没有菜品，请联系管理者添加。</div>
+      <div v-else-if="!groups.length" class="empty">还没有适用于{{ currentMealLabel }}的菜品。</div>
 
       <!-- ============ 列表视图 ============ -->
       <template v-else-if="view === 'list'">
@@ -148,6 +154,9 @@ App.pages['page-menu'] = {
   setup() {
     const minDate = App.util.todayStr();
     const date = Vue.ref(minDate);
+    const meals = App.util.MEALS;
+    // 默认落在当前时段：早上打开就是早餐
+    const meal = Vue.ref(App.util.currentMeal());
     const groups = Vue.ref([]);
     const cart = Vue.reactive({});
     const notes = Vue.ref('');
@@ -155,6 +164,62 @@ App.pages['page-menu'] = {
     const saving = Vue.ref(false);
     const hasOrder = Vue.ref(false);
     const editable = Vue.ref(true);
+
+    /**
+     * 购物车缓存：key = 日期|餐次。
+     * 必须按餐次隔离 —— 否则切到晚餐看一眼再切回早餐，已选的菜就没了。
+     */
+    const cache = new Map();
+    const cartKey = (d, m) => `${d}|${m}`;
+
+    /** 把当前 cart/notes 存进缓存（连「已保存快照」一起存，否则切餐次后未保存判断会错乱） */
+    function stash() {
+      cache.set(cartKey(date.value, meal.value), {
+        items: { ...cart },
+        notes: notes.value,
+        saved: savedSnapshot,
+      });
+    }
+
+    /** 从缓存恢复（没有则清空） */
+    function restore() {
+      const hit = cache.get(cartKey(date.value, meal.value));
+      clearCart();
+      if (hit) {
+        for (const [k, v] of Object.entries(hit.items)) cart[k] = v;
+        notes.value = hit.notes;
+        savedSnapshot = hit.saved;
+      } else {
+        notes.value = '';
+      }
+    }
+
+    const currentMealLabel = Vue.computed(() => App.util.mealLabel(meal.value));
+
+    /** 切换餐次：先把当前购物车存起来，再恢复目标餐次的 */
+    async function switchMeal(next) {
+      if (next === meal.value) return;
+      stash();
+      meal.value = next;
+      view.value = 'list';
+      activeDish.value = null;
+
+      // 关键：这条餐次如果已经有本地缓存（含未提交的选择），直接用缓存，
+      // 不要去拉服务器 —— 拉回来会用「已提交的订单」覆盖掉「刚选还没提交的」。
+      if (cache.has(cartKey(date.value, meal.value))) {
+        restore();
+        loading.value = true;
+        try {
+          await loadMenu();
+        } catch (err) {
+          App.toast.error(err.message);
+        } finally {
+          loading.value = false;
+        }
+      } else {
+        await refresh();
+      }
+    }
 
     // 视图状态：list（列表+搜索）/ detail（详情+加减）
     const view = Vue.ref('list');
@@ -245,7 +310,9 @@ App.pages['page-menu'] = {
         /* 忽略：没有评价或接口异常都不该阻碍点菜 */
       }
       // 把自己在当前日期已写过的评价回填到输入区，方便修改
-      const mine = reviews.value.reviews.find((r) => r.mine && r.orderDate === date.value);
+      const mine = reviews.value.reviews.find(
+        (r) => r.mine && r.orderDate === date.value && r.mealType === meal.value
+      );
       myReview.value = mine || null;
       draft.rating = mine ? mine.rating : 0;
       draft.content = mine ? mine.content : '';
@@ -258,6 +325,7 @@ App.pages['page-menu'] = {
         await App.api.post('/api/reviews', {
           dishId: activeDish.value.id,
           orderDate: date.value,
+          mealType: meal.value,
           rating: draft.rating,
           content: draft.content,
         });
@@ -305,8 +373,9 @@ App.pages['page-menu'] = {
       for (const key of Object.keys(cart)) delete cart[key];
     }
 
+    /** 拉取该日期+餐次的已提交订单，覆盖到购物车。同时刷新缓存。 */
     async function commitAndLoadOrder() {
-      const order = await App.api.get(`/api/orders/mine/${date.value}`);
+      const order = await App.api.get(`/api/orders/mine/${date.value}`, { meal: meal.value });
       clearCart();
       for (const item of order.items || []) cart[item.dishId] = item.quantity;
       notes.value = order.notes || '';
@@ -315,11 +384,25 @@ App.pages['page-menu'] = {
       // 记录已提交的菜品，用于判断能否评价
       orderedIds.value = new Set((order.items || []).map((i) => i.dishId));
       savedSnapshot = snapshot();
+      stash();
     }
 
     async function loadMenu() {
-      const data = await App.api.get('/api/menu');
+      const data = await App.api.get('/api/menu', { meal: meal.value });
       groups.value = data.groups || [];
+    }
+
+    /** 换餐次后重新拉菜单与订单 */
+    async function refresh() {
+      loading.value = true;
+      try {
+        await loadMenu();
+        await commitAndLoadOrder();
+      } catch (err) {
+        App.toast.error(err.message);
+      } finally {
+        loading.value = false;
+      }
     }
 
     /**
@@ -341,9 +424,13 @@ App.pages['page-menu'] = {
           return;
         }
       }
+      // 切换日期前先把当前餐次的购物车存起来，避免来回切时丢数据
+      stash();
       loading.value = true;
       backToList();
       try {
+        restore();
+        await loadMenu();
         await commitAndLoadOrder();
       } catch (err) {
         App.toast.error(err.message);
@@ -361,6 +448,7 @@ App.pages['page-menu'] = {
         }));
         await App.api.post('/api/orders', {
           orderDate: date.value,
+          mealType: meal.value,
           notes: notes.value,
           items,
         });
@@ -386,7 +474,7 @@ App.pages['page-menu'] = {
       if (fromQuery) date.value = fromQuery < minDate ? minDate : fromQuery;
       try {
         await loadMenu();
-        if (groups.value.length) await commitAndLoadOrder();
+        await commitAndLoadOrder();
       } catch (err) {
         App.toast.error(err.message);
       } finally {
@@ -397,6 +485,7 @@ App.pages['page-menu'] = {
     return {
       minDate, date, groups, notes, loading, saving, hasOrder, editable, relative,
       view, activeDish, search, filteredGroups,
+      meals, meal, switchMeal, currentMealLabel,
       reviews, myReview, draft, savingReview, canReview, canReviewPermission,
       submitReview, deleteReview, friendly,
       qty, inc, dec, pickedCount, totalQuantity, canSubmit, submit, onDateChange, rememberDate,
