@@ -11,7 +11,6 @@ App.router = (function () {
     { path: '/my-orders', component: 'page-my-orders', title: '我的订单', perm: 'order.submit' },
     { path: '/summary', component: 'page-summary', title: '菜单汇总', perm: 'summary.view' },
     { path: '/admin/dishes', component: 'page-admin-dishes', title: '菜品管理', perm: 'menu.manage' },
-    { path: '/admin/orders', component: 'page-admin-orders', title: '全部订单', perm: 'order.viewAll' },
     { path: '/admin/users', component: 'page-admin-users', title: '账号管理', perm: 'user.manage' },
     { path: '/admin/audit', component: 'page-admin-audit', title: '操作记录', perm: 'log.view' },
   ];

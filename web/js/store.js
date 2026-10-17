@@ -35,7 +35,7 @@ App.store = (function () {
   }
 
   /** 侧边导航与落地页的候选顺序，取第一个有权限的 */
-  const HOME_CANDIDATES = ['/menu', '/summary', '/admin/dishes', '/admin/orders', '/admin/users', '/admin/audit'];
+  const HOME_CANDIDATES = ['/menu', '/summary', '/admin/dishes', '/admin/users', '/admin/audit'];
 
   /** 当前用户的默认落地页（不含 #） */
   function homePath() {
@@ -51,7 +51,6 @@ App.store = (function () {
     '/summary': 'summary.view',
     '/admin/dishes': 'menu.manage',
     '/admin/users': 'user.manage',
-    '/admin/orders': 'order.viewAll',
     '/admin/audit': 'log.view',
   };
 

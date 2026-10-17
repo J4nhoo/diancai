@@ -13,6 +13,7 @@ const PERMISSIONS = [
   { key: 'review.create', label: '评价菜品', desc: '对自己点过的菜打分与评论（只能评吃过的）' },
   { key: 'summary.view', label: '查看汇总', desc: '按日期查看当日汇总菜单、一键复制' },
   { key: 'order.viewAll', label: '查看全部订单', desc: '查看所有人（而非仅自己）的订单' },
+  { key: 'order.delete', label: '删除订单', desc: '永久删除任意人的订单（破坏性操作）' },
   { key: 'menu.manage', label: '管理菜品与分组', desc: '新增/修改/删除/下架菜品，增删改分组，上传图片' },
   { key: 'user.manage', label: '管理账号', desc: '新建账号、改显示名、停用/启用、删除、重置密码' },
   { key: 'user.grant', label: '分配权限', desc: '给账号增删权限（提权操作，请谨慎授予）' },

@@ -30,7 +30,6 @@ App.toast = (function () {
     { path: '/my-orders', label: '我的订单', perm: 'order.submit' },
     { path: '/summary', label: '汇总', perm: 'summary.view' },
     { path: '/admin/dishes', label: '菜品', perm: 'menu.manage' },
-    { path: '/admin/orders', label: '订单', perm: 'order.viewAll' },
     { path: '/admin/users', label: '账号', perm: 'user.manage' },
     { path: '/admin/audit', label: '记录', perm: 'log.view' },
   ];

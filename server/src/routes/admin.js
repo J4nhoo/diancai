@@ -10,6 +10,7 @@ const { asyncHandler, ok, badRequest, notFound, conflict, forbidden } = require(
 const { str, int, dateStr } = require('../utils/validate');
 const { shapeUser, shapeGroup, shapeDish } = require('../utils/shape');
 const { PERMISSIONS, PERMISSION_KEYS, isValidPermission } = require('../permissions');
+const { MEALS, MEAL_KEYS, isValidMeal, serializeMealTypes, parseMealTypes } = require('../meals');
 const audit = require('../utils/audit');
 
 const router = express.Router();
@@ -26,6 +27,16 @@ function normalizeImageUrl(value) {
     throw badRequest('图片地址必须是本站上传的图片');
   }
   return url;
+}
+
+/** 校验并序列化菜品适用餐次：至少选一项，否则该菜任何餐次都看不到 */
+function normalizeMealTypes(value) {
+  if (!Array.isArray(value)) throw badRequest('请选择适用餐次');
+  if (!value.length) throw badRequest('至少要选择一个适用餐次');
+  for (const m of value) {
+    if (!isValidMeal(m)) throw badRequest(`未知餐次：${m}`);
+  }
+  return serializeMealTypes(value);
 }
 
 // ============================ 权限目录 ============================
@@ -516,7 +527,7 @@ router.get(
     }
 
     const rows = await db.query(
-      `SELECT d.id, d.group_id, d.name, d.image_url, d.notes, d.flavor, d.status,
+      `SELECT d.id, d.group_id, d.name, d.image_url, d.notes, d.meal_types, d.flavor, d.status,
               g.name AS group_name
        FROM dishes d
        LEFT JOIN dish_groups g ON g.id = d.group_id
@@ -537,18 +548,19 @@ router.post(
     const groupId = int(body.groupId, { name: '分组', min: 1 });
     const imageUrl = normalizeImageUrl(body.imageUrl);
     const notes = str(body.notes, { name: '备注', required: false, max: 500 }) || null;
+    const mealTypes = normalizeMealTypes(body.mealTypes);
 
     const group = await db.queryOne('SELECT id, name FROM dish_groups WHERE id = ?', [groupId]);
     if (!group) throw badRequest('分组不存在');
 
     const row = await db.withTransaction(async (conn) => {
       const [result] = await conn.query(
-        `INSERT INTO dishes (group_id, name, image_url, notes, status)
-         VALUES (?, ?, ?, ?, 1)`,
-        [groupId, name, imageUrl, notes]
+        `INSERT INTO dishes (group_id, name, image_url, notes, meal_types, status)
+         VALUES (?, ?, ?, ?, ?, 1)`,
+        [groupId, name, imageUrl, notes, mealTypes]
       );
       const [rows] = await conn.query(
-        `SELECT d.id, d.group_id, d.name, d.image_url, d.notes, d.flavor, d.status,
+        `SELECT d.id, d.group_id, d.name, d.image_url, d.notes, d.meal_types, d.flavor, d.status,
                 g.name AS group_name
          FROM dishes d LEFT JOIN dish_groups g ON g.id = d.group_id WHERE d.id = ?`,
         [result.insertId]
@@ -560,7 +572,7 @@ router.post(
         targetId: result.insertId,
         targetName: name,
         before: null,
-        after: { name, group: group.name, notes, status: 1 },
+        after: { name, group: group.name, notes, mealTypes: parseMealTypes(mealTypes), status: 1 },
       });
       return rows[0];
     });
@@ -604,7 +616,7 @@ router.patch(
   asyncHandler(async (req, res) => {
     const id = int(req.params.id, { name: '菜品', min: 1 });
     const existing = await db.queryOne(
-      `SELECT d.id, d.name, d.group_id, d.image_url, d.notes, d.status,
+      `SELECT d.id, d.name, d.group_id, d.image_url, d.notes, d.meal_types, d.status,
               g.name AS group_name
        FROM dishes d LEFT JOIN dish_groups g ON g.id = d.group_id WHERE d.id = ?`,
       [id]
@@ -633,6 +645,10 @@ router.patch(
       fields.push('notes = ?');
       params.push(str(body.notes, { name: '备注', required: false, max: 500 }) || null);
     }
+    if (body.mealTypes !== undefined) {
+      fields.push('meal_types = ?');
+      params.push(normalizeMealTypes(body.mealTypes));
+    }
     if (body.status !== undefined) {
       fields.push('status = ?');
       params.push(int(body.status, { name: '状态', min: 0, max: 1 }));
@@ -642,7 +658,7 @@ router.patch(
     const row = await db.withTransaction(async (conn) => {
       await conn.query(`UPDATE dishes SET ${fields.join(', ')} WHERE id = ?`, [...params, id]);
       const [rows] = await conn.query(
-        `SELECT d.id, d.group_id, d.name, d.image_url, d.notes, d.flavor, d.status,
+        `SELECT d.id, d.group_id, d.name, d.image_url, d.notes, d.meal_types, d.flavor, d.status,
                 g.name AS group_name
          FROM dishes d LEFT JOIN dish_groups g ON g.id = d.group_id WHERE d.id = ?`,
         [id]
@@ -652,15 +668,17 @@ router.patch(
         name: existing.name,
         group: existing.group_name,
         notes: existing.notes,
+        mealTypes: parseMealTypes(existing.meal_types).join(','),
         status: existing.status,
       };
       const now = {
         name: after.name,
         group: after.group_name,
         notes: after.notes,
+        mealTypes: parseMealTypes(after.meal_types).join(','),
         status: after.status,
       };
-      const diff = audit.diffFields(before, now, ['name', 'group', 'notes', 'status']);
+      const diff = audit.diffFields(before, now, ['name', 'group', 'notes', 'mealTypes', 'status']);
       if (diff) {
         await audit.record(conn, {
           actor: audit.actorOf(req),
@@ -737,6 +755,8 @@ router.get(
     const from = dateStr(req.query.from, { name: '起始日期', required: false });
     const to = dateStr(req.query.to, { name: '结束日期', required: false });
     const userId = int(req.query.userId, { name: '账号', required: false, min: 1 });
+    const meal = req.query.meal === undefined || req.query.meal === '' ? null : String(req.query.meal);
+    if (meal !== null && !isValidMeal(meal)) throw badRequest('餐次不合法');
     const page = int(req.query.page, { name: '页码', required: false, min: 1, fallback: 1 });
     const pageSize = int(req.query.pageSize, { name: '每页条数', required: false, min: 1, max: 100, fallback: 20 });
 
@@ -759,16 +779,20 @@ router.get(
       where.push('o.user_id = ?');
       params.push(userId);
     }
+    if (meal) {
+      where.push('o.meal_type = ?');
+      params.push(meal);
+    }
     const whereSql = `WHERE ${where.join(' AND ')}`;
 
     const total = await db.queryOne(`SELECT COUNT(*) AS c FROM orders o ${whereSql}`, params);
     // page/pageSize 已通过 int() 校验为整数，直接内联，避免预编译语句对 LIMIT 占位符的兼容问题
     const offset = (page - 1) * pageSize;
     const orders = await db.query(
-      `SELECT o.id, o.order_date, o.notes, u.display_name, u.username, u.role
+      `SELECT o.id, o.order_date, o.meal_type, o.notes, u.display_name, u.username, u.role
        FROM orders o JOIN users u ON u.id = o.user_id
        ${whereSql}
-       ORDER BY o.order_date DESC, o.id DESC
+       ORDER BY o.order_date DESC, FIELD(o.meal_type,'breakfast','lunch','dinner'), o.id DESC
        LIMIT ${pageSize} OFFSET ${offset}`,
       params
     );
@@ -783,6 +807,7 @@ router.get(
       );
       data.push({
         orderDate: order.order_date,
+        mealType: order.meal_type,
         notes: order.notes || '',
         displayName: order.display_name,
         username: order.username,
@@ -797,13 +822,13 @@ router.get(
       });
     }
 
-    ok(res, { orders: data, total: Number(total.c), page, pageSize });
+    ok(res, { orders: data, total: Number(total.c), page, pageSize, meals: MEALS });
   })
 );
 
 // ============================ 操作记录 ============================
 
-const AUDIT_TARGETS = ['dish', 'group', 'user', 'permission', 'log'];
+const AUDIT_TARGETS = ['dish', 'group', 'user', 'permission', 'order', 'log'];
 
 router.get(
   '/audit-logs',
@@ -859,6 +884,55 @@ router.delete(
     });
 
     ok(res, { deleted: true, count: deleted });
+  })
+);
+
+/**
+ * 永久删除一条订单（连带其明细）。破坏性操作，需 order.delete。
+ * 评价不挂在订单上（只记录日期+餐次快照），所以删订单不会连带删评价。
+ */
+router.delete(
+  '/orders/:id',
+  requirePermission('order.delete'),
+  asyncHandler(async (req, res) => {
+    const id = int(req.params.id, { name: '订单', min: 1 });
+
+    const order = await db.queryOne(
+      `SELECT o.id, o.user_id, o.order_date, o.meal_type, o.notes, u.display_name, u.username
+       FROM orders o JOIN users u ON u.id = o.user_id
+       WHERE o.id = ?`,
+      [id]
+    );
+    if (!order) throw notFound('订单不存在');
+
+    const items = await db.query(
+      `SELECT oi.dish_id, oi.quantity, d.name AS dish_name
+       FROM order_items oi JOIN dishes d ON d.id = oi.dish_id
+       WHERE oi.order_id = ? ORDER BY d.id`,
+      [id]
+    );
+
+    await db.withTransaction(async (conn) => {
+      // order_items 是 ON DELETE CASCADE，会随订单一起删
+      await conn.query('DELETE FROM orders WHERE id = ?', [id]);
+      await audit.record(conn, {
+        actor: audit.actorOf(req),
+        action: 'order.delete',
+        targetType: 'order',
+        targetId: id,
+        targetName: `${order.display_name} ${order.order_date} ${order.meal_type}`,
+        before: {
+          下单人: order.display_name,
+          日期: order.order_date,
+          餐次: order.meal_type,
+          备注: order.notes || null,
+          菜品: items.map((i) => `${i.dish_name} x${i.quantity}`),
+        },
+        after: null,
+      });
+    });
+
+    ok(res, { deleted: true });
   })
 );
 
