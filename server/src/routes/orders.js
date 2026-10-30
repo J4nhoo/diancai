@@ -6,6 +6,7 @@ const { authenticate, requirePermission } = require('../middleware/auth');
 const { asyncHandler, ok, badRequest, notFound, forbidden } = require('../utils/http');
 const { dateStr, int, str, todayStr } = require('../utils/validate');
 const { isValidMeal, currentMeal } = require('../meals');
+const { safeAdvanceExpired, isEditableByOwner, statusText } = require('../utils/orderStatus');
 
 const router = express.Router();
 
@@ -32,7 +33,7 @@ async function loadItems(orderId) {
 async function loadOrder(userId, date, mealType) {
   const order = await db.queryOne(
     `SELECT id, order_date, meal_type, notes, status FROM orders
-     WHERE user_id = ? AND order_date = ? AND meal_type = ? AND status = 1`,
+     WHERE user_id = ? AND order_date = ? AND meal_type = ?`,
     [userId, date, mealType]
   );
   if (!order) return null;
@@ -40,6 +41,7 @@ async function loadOrder(userId, date, mealType) {
     orderDate: order.order_date,
     mealType: order.meal_type,
     notes: order.notes || '',
+    status: order.status,
     items: await loadItems(order.id),
   };
 }
@@ -109,20 +111,21 @@ router.post(
 
     await db.withTransaction(async (conn) => {
       const [existing] = await conn.query(
-        'SELECT id FROM orders WHERE user_id = ? AND order_date = ? AND meal_type = ?',
+        'SELECT id, status FROM orders WHERE user_id = ? AND order_date = ? AND meal_type = ?',
         [req.user.id, date, mealType]
       );
       let orderId;
       if (existing.length) {
+        // 一旦被厨师确认（或已逾期/完成）就锁定，不能再改内容
+        if (!isEditableByOwner(existing[0].status)) {
+          throw forbidden('该订单' + statusText(existing[0].status) + '，不能再修改');
+        }
         orderId = existing[0].id;
-        await conn.query(
-          'UPDATE orders SET notes = ?, status = 1 WHERE id = ?',
-          [notes, orderId]
-        );
+        await conn.query('UPDATE orders SET notes = ? WHERE id = ?', [notes, orderId]);
       } else {
         const [result] = await conn.query(
-          'INSERT INTO orders (user_id, order_date, meal_type, notes, status) VALUES (?, ?, ?, ?, 1)',
-          [req.user.id, date, mealType, notes]
+          'INSERT INTO orders (user_id, order_date, meal_type, notes, status) VALUES (?, ?, ?, ?, ?)',
+          [req.user.id, date, mealType, notes, 'pending']
         );
         orderId = result.insertId;
       }
@@ -140,7 +143,11 @@ router.get(
     const from = dateStr(req.query.from, { name: '起始日期', required: false });
     const to = dateStr(req.query.to, { name: '结束日期', required: false });
 
-    const where = ['user_id = ?', 'status = 1'];
+    // 查询前先推进已到期的状态（失败不影响主查询）
+    await safeAdvanceExpired();
+
+    const where = ['user_id = ?'];
+
     const params = [req.user.id];
     if (from) {
       where.push('order_date >= ?');
@@ -152,7 +159,7 @@ router.get(
     }
 
     const orders = await db.query(
-      `SELECT id, order_date, meal_type, notes FROM orders WHERE ${where.join(' AND ')}
+      `SELECT id, order_date, meal_type, notes, status FROM orders WHERE ${where.join(' AND ')}
        ORDER BY order_date DESC, FIELD(meal_type,'breakfast','lunch','dinner') LIMIT 100`,
       params
     );
@@ -164,7 +171,9 @@ router.get(
         orderDate: order.order_date,
         mealType: order.meal_type,
         notes: order.notes || '',
-        editable: order.order_date >= today,
+        status: order.status,
+        // 可改 = 日期未过期 且 状态仍是待确认
+        editable: order.order_date >= today && isEditableByOwner(order.status),
         items: await loadItems(order.id),
       });
     }
@@ -180,9 +189,12 @@ router.get(
     const mealType = mealFromQuery(req);
     const order = await loadOrder(req.user.id, date, mealType);
     if (!order) {
-      return ok(res, { orderDate: date, mealType, notes: '', items: [], editable: date >= todayStr() });
+      return ok(res, { orderDate: date, mealType, notes: '', items: [], status: null, editable: date >= todayStr() });
     }
-    ok(res, { ...order, editable: date >= todayStr() });
+    ok(res, {
+      ...order,
+      editable: date >= todayStr() && isEditableByOwner(order.status),
+    });
   })
 );
 
@@ -199,10 +211,13 @@ router.put(
     assertEditable(date);
 
     const existing = await db.queryOne(
-      'SELECT id FROM orders WHERE user_id = ? AND order_date = ? AND meal_type = ? AND status = 1',
+      'SELECT id, status FROM orders WHERE user_id = ? AND order_date = ? AND meal_type = ?',
       [req.user.id, date, mealType]
     );
     if (!existing) throw notFound('该餐次没有你的订单');
+    if (!isEditableByOwner(existing.status)) {
+      throw forbidden('该订单' + statusText(existing.status) + '，不能再修改');
+    }
 
     const notes = str(req.body && req.body.notes, { name: '忌口/备注', required: false, max: 500 }) || null;
     const items = await normalizeItems(req.body && req.body.items, mealType);
@@ -226,15 +241,17 @@ router.delete(
 
     const result = await db.withTransaction(async (conn) => {
       const [rows] = await conn.query(
-        'SELECT id FROM orders WHERE user_id = ? AND order_date = ? AND meal_type = ? AND status = 1',
+        'SELECT id, status FROM orders WHERE user_id = ? AND order_date = ? AND meal_type = ?',
         [req.user.id, date, mealType]
       );
       if (!rows.length) return 0;
+      if (!isEditableByOwner(rows[0].status)) return -1;
       await conn.query('DELETE FROM order_items WHERE order_id = ?', [rows[0].id]);
       await conn.query('DELETE FROM orders WHERE id = ?', [rows[0].id]);
       return 1;
     });
 
+    if (result === -1) throw forbidden('该订单已被确认，不能再撤销');
     if (!result) throw notFound('该餐次没有你的订单');
     ok(res, { deleted: true });
   })

@@ -18,6 +18,17 @@ const MEAL_LABELS = Object.fromEntries(MEALS.map((m) => [m.key, m.label]));
 /** 菜品默认适用餐次：现有菜都是午晚餐，早餐是后来才有的概念 */
 const DEFAULT_DISH_MEALS = 'lunch,dinner';
 
+/**
+ * 各餐次的确认截止时间（HH:MM）。
+ * 过了这个时刻订单仍未确认 → 已逾期；已确认的 → 已完成。
+ * 纯规则、无数据依赖，放常量里比进数据库简单；将来要可配置再迁。
+ */
+const MEAL_CUTOFF = {
+  breakfast: '10:00',
+  lunch: '12:00',
+  dinner: '18:00',
+};
+
 /** 按小时推当前餐次。分界点（10 点 / 16 点）只是经验值，用于汇总页默认选中，用户可随手切。 */
 function currentMeal(date) {
   const hour = (date || new Date()).getHours();
@@ -51,6 +62,7 @@ module.exports = {
   MEALS,
   MEAL_KEYS,
   MEAL_LABELS,
+  MEAL_CUTOFF,
   DEFAULT_DISH_MEALS,
   currentMeal,
   parseMealTypes,

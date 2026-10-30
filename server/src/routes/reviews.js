@@ -22,7 +22,8 @@ async function assertOrdered(userId, dishId, orderDate, mealType) {
   const hit = await db.queryOne(
     `SELECT o.id FROM orders o
      JOIN order_items oi ON oi.order_id = o.id
-     WHERE o.user_id = ? AND oi.dish_id = ? AND o.order_date = ? AND o.meal_type = ? AND o.status = 1
+     WHERE o.user_id = ? AND oi.dish_id = ? AND o.order_date = ? AND o.meal_type = ?
+       AND o.status IN ('pending','confirmed','completed')
      LIMIT 1`,
     [userId, dishId, orderDate, mealType]
   );

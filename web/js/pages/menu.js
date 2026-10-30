@@ -26,7 +26,7 @@ App.pages['page-menu'] = {
       </div>
 
       <p v-if="editable === false" class="notice warn">
-        该日期已过期，只能查看，不能修改。
+        {{ lockedReason }}
       </p>
 
       <div v-if="loading" class="loading">加载中…</div>
@@ -77,7 +77,7 @@ App.pages['page-menu'] = {
             <span class="detail-num">{{ qty(activeDish.id) }}</span>
             <button type="button" class="big-btn" @click="inc(activeDish.id)">+</button>
           </div>
-          <p class="detail-locked" v-else>该日期已过期，只能查看。</p>
+          <p class="detail-locked" v-else>{{ lockedReason }}</p>
         </div>
 
         <!-- ============ 评价区 ============ -->
@@ -142,7 +142,7 @@ App.pages['page-menu'] = {
         <div class="submit-row">
           <span class="picked-count">已选 <b>{{ pickedCount }}</b> 道 · 共 {{ totalQuantity }} 份</span>
           <button type="button" class="btn small" v-if="pickedCount && editable" @click="clearAll">清空</button>
-          <button type="button" class="btn primary" :disabled="!canSubmit" @click="submit">
+          <button type="button" class="btn primary" v-if="editable" :disabled="!canSubmit" @click="submit">
             {{ saving ? '提交中…' : (hasOrder ? '更新订单' : '提交订单') }}
           </button>
         </div>
@@ -153,7 +153,9 @@ App.pages['page-menu'] = {
   `,
   setup() {
     const minDate = App.util.todayStr();
-    const date = Vue.ref(minDate);
+    // 默认落在第二天：家人通常是头一天晚上定第二天的菜
+    const defaultDate = App.util.addDays(minDate, 1);
+    const date = Vue.ref(defaultDate);
     const meals = App.util.MEALS;
     // 默认落在当前时段：早上打开就是早餐
     const meal = Vue.ref(App.util.currentMeal());
@@ -164,6 +166,16 @@ App.pages['page-menu'] = {
     const saving = Vue.ref(false);
     const hasOrder = Vue.ref(false);
     const editable = Vue.ref(true);
+    const orderStatus = Vue.ref(null);
+
+    /** 只读时告诉用户为什么不能改（日期过期 vs 订单已被确认） */
+    const lockedReason = Vue.computed(() => {
+      if (editable.value) return '';
+      if (orderStatus.value && orderStatus.value !== 'pending') {
+        return `该订单${App.util.statusLabel(orderStatus.value)}，不能再修改。如需调整请联系管理者。`;
+      }
+      return '该日期已过期，只能查看，不能修改。';
+    });
 
     /**
      * 购物车缓存：key = 日期|餐次。
@@ -192,6 +204,28 @@ App.pages['page-menu'] = {
       } else {
         notes.value = '';
       }
+    }
+
+    /**
+     * 进入页面时弹窗选餐次。用全局模态承载，点选后 resolve 对应餐次。
+     * 默认高亮当前时段（早上打开就是早餐），用户仍可改选。
+     */
+    function pickMeal() {
+      return new Promise((resolve) => {
+        const current = App.util.currentMeal();
+        const buttons = meals.map((m) => ({
+          label: m.key === current ? `${m.label}（当前时段）` : m.label,
+          primary: m.key === current,
+          onClick: () => resolve(m.key),
+        }));
+        // 三个餐次并排，选完弹窗自动关闭
+        App.modal.open({
+          title: '选择餐次',
+          body: '<p>要点哪一餐？</p>',
+          dismissible: false,
+          actions: buttons,
+        });
+      });
     }
 
     const currentMealLabel = Vue.computed(() => App.util.mealLabel(meal.value));
@@ -380,6 +414,7 @@ App.pages['page-menu'] = {
       for (const item of order.items || []) cart[item.dishId] = item.quantity;
       notes.value = order.notes || '';
       hasOrder.value = (order.items || []).length > 0;
+      orderStatus.value = order.status || null;
       editable.value = order.editable !== false;
       // 记录已提交的菜品，用于判断能否评价
       orderedIds.value = new Set((order.items || []).map((i) => i.dishId));
@@ -472,6 +507,10 @@ App.pages['page-menu'] = {
     Vue.onMounted(async () => {
       const fromQuery = App.router.state.query.date;
       if (fromQuery) date.value = fromQuery < minDate ? minDate : fromQuery;
+
+      // 每次进入点菜页先让用户明确选餐次，避免误点错时段
+      meal.value = await pickMeal();
+
       try {
         await loadMenu();
         await commitAndLoadOrder();
@@ -484,6 +523,7 @@ App.pages['page-menu'] = {
 
     return {
       minDate, date, groups, notes, loading, saving, hasOrder, editable, relative,
+      orderStatus, lockedReason,
       view, activeDish, search, filteredGroups,
       meals, meal, switchMeal, currentMealLabel,
       reviews, myReview, draft, savingReview, canReview, canReviewPermission,

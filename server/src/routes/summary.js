@@ -6,6 +6,7 @@ const { authenticate, requirePermission } = require('../middleware/auth');
 const { asyncHandler, ok, badRequest } = require('../utils/http');
 const { dateStr, todayStr } = require('../utils/validate');
 const { isValidMeal, currentMeal, MEALS } = require('../meals');
+const { safeAdvanceExpired } = require('../utils/orderStatus');
 
 const router = express.Router();
 
@@ -17,7 +18,7 @@ const MERGED_SQL = `
          SUM(oi.quantity) AS total_quantity,
          COUNT(DISTINCT o.id) AS order_count
   FROM order_items oi
-  JOIN orders o ON o.id = oi.order_id AND o.status = 1
+  JOIN orders o ON o.id = oi.order_id AND o.status IN ('pending','confirmed','completed')
   JOIN dishes d ON d.id = oi.dish_id
   LEFT JOIN dish_groups g ON g.id = d.group_id
   WHERE o.order_date = ? AND o.meal_type = ?
@@ -50,9 +51,13 @@ router.get(
     const meal = rawMeal === undefined || rawMeal === '' ? currentMeal() : String(rawMeal);
     if (!isValidMeal(meal)) throw badRequest('餐次不合法');
 
+    // 汇总前先推进到期状态，保证看到的是最新的「已逾期 / 已完成」
+    await safeAdvanceExpired();
+
     const rows = await db.query(MERGED_SQL, [date, meal]);
     const orderRow = await db.queryOne(
-      'SELECT COUNT(*) AS c FROM orders WHERE order_date = ? AND meal_type = ? AND status = 1',
+      `SELECT COUNT(*) AS c FROM orders
+       WHERE order_date = ? AND meal_type = ? AND status IN ('pending','confirmed','completed')`,
       [date, meal]
     );
 
@@ -64,9 +69,10 @@ router.get(
 
     if (canViewAll) {
       const orderList = await db.query(
-        `SELECT o.id, o.notes, u.id AS user_id, u.display_name, u.username, u.role
+        `SELECT o.id, o.notes, o.status, u.id AS user_id, u.display_name, u.username, u.role
          FROM orders o JOIN users u ON u.id = o.user_id
-         WHERE o.order_date = ? AND o.meal_type = ? AND o.status = 1
+         WHERE o.order_date = ? AND o.meal_type = ?
+           AND o.status IN ('pending','confirmed','completed')
          ORDER BY u.display_name, u.id`,
         [date, meal]
       );
@@ -103,6 +109,7 @@ router.get(
         displayName: o.display_name,
         username: o.username,
         role: o.role,
+        status: o.status,
         notes: o.notes || '',
         items: itemsByOrder.get(o.id) || [],
       }));
@@ -150,6 +157,47 @@ router.get(
       orderCount: Number(orderRow.c),
       text: buildText(groups, notes),
     });
+  })
+);
+
+/**
+ * 待确认订单摘要：只回数量，供厨师/管理员登录后弹窗提醒。
+ * 范围限「今天 + 明天」—— 提前几天的单不该天天骚扰。
+ * 只有能确认或能看全部订单的人才查得到，否则返回空。
+ */
+router.get(
+  '/pending',
+  asyncHandler(async (req, res) => {
+    const canSee =
+      req.user.isOwner ||
+      req.user.perms.has('order.confirm') ||
+      req.user.perms.has('order.viewAll');
+    if (!canSee) return ok(res, { count: 0, items: [] });
+
+    await safeAdvanceExpired();
+
+    const today = todayStr();
+    // 按本地日期加一天（不用 new Date(str)，那个在各引擎行为不一致）
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    const tomorrowStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    const rows = await db.query(
+      `SELECT o.order_date, o.meal_type, COUNT(*) AS c
+       FROM orders o
+       WHERE o.status = 'pending' AND o.order_date IN (?, ?)
+       GROUP BY o.order_date, o.meal_type
+       ORDER BY o.order_date, FIELD(o.meal_type,'breakfast','lunch','dinner')`,
+      [today, tomorrowStr]
+    );
+
+    const items = rows.map((r) => ({
+      date: r.order_date,
+      mealType: r.meal_type,
+      count: Number(r.c),
+    }));
+
+    ok(res, { count: items.reduce((sum, i) => sum + i.count, 0), items });
   })
 );
 

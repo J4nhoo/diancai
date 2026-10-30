@@ -23,6 +23,7 @@ App.pages['page-my-orders'] = {
             <div>
               <b>{{ friendly(order.orderDate) }}</b>
               <span class="badge meal">{{ mealLabel(order.mealType) }}</span>
+              <span class="badge status" :class="statusClass(order.status)">{{ statusLabel(order.status) }}</span>
               <span class="badge" v-if="relative(order.orderDate)">{{ relative(order.orderDate) }}</span>
             </div>
             <span class="badge" :class="order.editable ? 'ok' : 'muted'">
@@ -53,7 +54,8 @@ App.pages['page-my-orders'] = {
   setup() {
     const today = App.util.todayStr();
     const from = Vue.ref(App.util.addDays(today, -14));
-    const to = Vue.ref(today);
+    // 点菜页默认下的是第二天的单，所以范围要往后留出余量，否则看不到刚下的单
+    const to = Vue.ref(App.util.addDays(today, 7));
     const orders = Vue.ref([]);
     const loading = Vue.ref(true);
     const busy = Vue.ref('');
@@ -61,6 +63,8 @@ App.pages['page-my-orders'] = {
     const friendly = App.util.friendlyDate;
     const relative = App.util.relativeDayLabel;
     const mealLabel = App.util.mealLabel;
+    const statusLabel = App.util.statusLabel;
+    const statusClass = App.util.statusClass;
 
     async function load() {
       loading.value = true;
@@ -94,6 +98,6 @@ App.pages['page-my-orders'] = {
 
     Vue.onMounted(load);
 
-    return { from, to, orders, loading, busy, friendly, relative, mealLabel, load, remove, reOrder };
+    return { from, to, orders, loading, busy, friendly, relative, mealLabel, statusLabel, statusClass, load, remove, reOrder };
   },
 };

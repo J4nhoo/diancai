@@ -4,7 +4,7 @@ App.pages['page-login'] = {
   template: `
     <div class="login-wrap">
       <div class="login-card">
-        <h1 class="login-title">家庭点菜</h1>
+        <h1 class="login-title">朝夕家膳</h1>
         <p class="login-sub">请使用家庭账号登录</p>
 
         <form @submit.prevent="submit">
@@ -44,6 +44,8 @@ App.pages['page-login'] = {
       try {
         await App.store.login(username.value, password.value);
         App.toast.success('登录成功');
+        // 先让待确认提醒入队，再跳转 —— 否则点菜页的餐次弹窗会先弹出来把它盖住
+        if (App.notifyPendingAfterLogin) await App.notifyPendingAfterLogin();
         location.hash = `#${App.store.homePath()}`;
       } catch (err) {
         error.value = err.message;

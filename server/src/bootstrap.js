@@ -27,6 +27,7 @@ const MIGRATIONS = [
   'migrate-001-permissions.js',
   'migrate-002-dish-fields-and-reviews.js',
   'migrate-003-meal-types.js',
+  'migrate-004-order-status.js',
 ];
 
 function connectionOptions(extra) {

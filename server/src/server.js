@@ -80,6 +80,25 @@ app.use((req, res, next) => {
 app.use(notFoundHandler);
 app.use(errorHandler);
 
+/**
+ * 取本机可被局域网访问的 IPv4 地址。
+ * 用 os.networkInterfaces() 而不是解析 ipconfig/ifconfig —— 原生、跨平台、
+ * 不受系统语言影响。排除回环和常见虚拟网卡（WSL / Docker / VMware 等）。
+ */
+function lanAddresses() {
+  const os = require('os');
+  const out = [];
+  const ifaces = os.networkInterfaces();
+  for (const [name, list] of Object.entries(ifaces)) {
+    if (/wsl|vethernet|hyper-v|docker|vmware|virtualbox|loopback/i.test(name)) continue;
+    for (const info of list || []) {
+      if (info.family !== 'IPv4' || info.internal) continue;
+      out.push({ name, address: info.address });
+    }
+  }
+  return out;
+}
+
 async function start() {
   // 托管平台（Render 免费档）没有 Shell，用 AUTO_INIT_DB=true 在启动时自动建表。
   // 失败只记日志不阻断启动，避免数据库临时抖动导致服务反复重启、更难排查。
@@ -95,6 +114,14 @@ async function start() {
 
   const server = app.listen(config.port, () => {
     console.log(`[meal-order] 服务已启动 → http://127.0.0.1:${config.port}  (env=${config.env})`);
+    const lans = lanAddresses();
+    if (lans.length) {
+      for (const { address, name } of lans) {
+        console.log(`[meal-order] 局域网访问（手机连同一 WiFi）：http://${address}:${config.port}  [${name}]`);
+      }
+    } else {
+      console.log('[meal-order] 未检测到局域网地址（可能未连 WiFi 或只有虚拟网卡）');
+    }
     console.log(`[meal-order] 图片存储：${storage.name}${storage.shouldServeStatic() ? `（${config.upload.dir}）` : ''}`);
     console.log(`[meal-order] 前端目录：${config.webDir}`);
     if (typeof storage.verify === 'function') {

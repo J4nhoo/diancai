@@ -25,6 +25,22 @@ App.util = (function () {
     return MEAL_LABEL[key] || key || '';
   }
 
+  // 订单状态。与后端 server/src/utils/orderStatus.js 保持一致
+  const ORDER_STATUS = {
+    pending: { label: '待确认', cls: 'st-pending' },
+    confirmed: { label: '已确认', cls: 'st-confirmed' },
+    overdue: { label: '已逾期', cls: 'st-overdue' },
+    completed: { label: '已完成', cls: 'st-completed' },
+  };
+
+  function statusLabel(key) {
+    return (ORDER_STATUS[key] && ORDER_STATUS[key].label) || key || '';
+  }
+
+  function statusClass(key) {
+    return (ORDER_STATUS[key] && ORDER_STATUS[key].cls) || '';
+  }
+
   function pad(n) {
     return String(n).padStart(2, '0');
   }
@@ -173,5 +189,6 @@ App.util = (function () {
   return {
     todayStr, addDays, friendlyDate, relativeDayLabel, copyText, toDateStr, fallbackImage,
     compressImage, MEALS, currentMeal, mealLabel,
+    ORDER_STATUS, statusLabel, statusClass,
   };
 })();

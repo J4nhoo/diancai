@@ -68,11 +68,19 @@ App.pages['page-summary'] = {
                   <div>
                     <b>{{ o.displayName }}</b>
                     <span class="badge muted" v-if="o.role">{{ o.role }}</span>
+                    <span class="badge status" :class="statusClass(o.status)">{{ statusLabel(o.status) }}</span>
                   </div>
-                  <button type="button" class="btn small danger" v-if="canDelete"
-                          :disabled="deleting === o.orderId" @click="removeOrder(o)">
-                    {{ deleting === o.orderId ? '…' : '删除' }}
-                  </button>
+                  <div class="order-head-btns">
+                    <button type="button" class="btn small primary"
+                            v-if="canConfirm && o.status === 'pending'"
+                            :disabled="busyOrder === o.orderId" @click="confirmOrder(o)">
+                      {{ busyOrder === o.orderId ? '…' : '确认' }}
+                    </button>
+                    <button type="button" class="btn small danger" v-if="canDelete"
+                            :disabled="deleting === o.orderId" @click="removeOrder(o)">
+                      {{ deleting === o.orderId ? '…' : '删除' }}
+                    </button>
+                  </div>
                 </div>
 
                 <ul class="mini-items">
@@ -91,15 +99,35 @@ App.pages['page-summary'] = {
     </div>
   `,
   setup() {
-    const date = Vue.ref(App.router.state.query.date || App.util.todayStr());
+    // 默认看第二天：家人是头一天晚上定第二天的菜，厨师第二天照着做
+    const todayStr = App.util.todayStr();
+    const date = Vue.ref(App.router.state.query.date || App.util.addDays(todayStr, 1));
     const meals = App.util.MEALS;
     // 默认按当前时间落在对应餐次，厨师打开就是当下要准备的
     const meal = Vue.ref(App.router.state.query.meal || App.util.currentMeal());
     const data = Vue.ref({});
     const loading = Vue.ref(true);
     const deleting = Vue.ref(null);
+    const busyOrder = Vue.ref(null);
     const canDelete = Vue.computed(() => App.store.can('order.delete'));
+    const canConfirm = Vue.computed(() => App.store.can('order.confirm'));
     const canViewAll = Vue.computed(() => App.store.can('order.viewAll'));
+    const statusLabel = App.util.statusLabel;
+    const statusClass = App.util.statusClass;
+
+    /** 确认整张单：只改状态，不能改菜品内容 */
+    async function confirmOrder(o) {
+      busyOrder.value = o.orderId;
+      try {
+        await App.api.patch(`/api/admin/orders/${o.orderId}/status`, { status: 'confirmed' });
+        App.toast.success('已确认');
+        await load();
+      } catch (err) {
+        App.toast.error(err.message);
+      } finally {
+        busyOrder.value = null;
+      }
+    }
 
     function switchMeal(next) {
       if (next === meal.value) return;
@@ -167,6 +195,7 @@ App.pages['page-summary'] = {
     return {
       date, data, loading, groups, notes, orders, relative, load, copy, fallback, onImgError,
       meals, meal, switchMeal, deleting, canDelete, canViewAll, removeOrder,
+      busyOrder, canConfirm, confirmOrder, statusLabel, statusClass,
     };
   },
 };

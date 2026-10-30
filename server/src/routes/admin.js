@@ -7,10 +7,11 @@ const storage = require('../storage');
 const { requirePermission } = require('../middleware/auth');
 const { uploadImage } = require('../middleware/upload');
 const { asyncHandler, ok, badRequest, notFound, conflict, forbidden } = require('../utils/http');
-const { str, int, dateStr } = require('../utils/validate');
+const { str, int, dateStr, enumValue } = require('../utils/validate');
 const { shapeUser, shapeGroup, shapeDish } = require('../utils/shape');
 const { PERMISSIONS, PERMISSION_KEYS, isValidPermission } = require('../permissions');
 const { MEALS, MEAL_KEYS, isValidMeal, serializeMealTypes, parseMealTypes } = require('../meals');
+const { safeAdvanceExpired, ORDER_STATUS, statusText } = require('../utils/orderStatus');
 const audit = require('../utils/audit');
 
 const router = express.Router();
@@ -760,7 +761,11 @@ router.get(
     const page = int(req.query.page, { name: '页码', required: false, min: 1, fallback: 1 });
     const pageSize = int(req.query.pageSize, { name: '每页条数', required: false, min: 1, max: 100, fallback: 20 });
 
-    const where = ['o.status = 1'];
+    // 列表前推进到期状态，保证「已逾期 / 已完成」是最新的
+    await safeAdvanceExpired();
+
+    // 不再有「已撤销」（撤销是物理删除），这里展示所有状态的订单
+    const where = ['1 = 1'];
     const params = [];
     if (date) {
       where.push('o.order_date = ?');
@@ -884,6 +889,69 @@ router.delete(
     });
 
     ok(res, { deleted: true, count: deleted });
+  })
+);
+
+/**
+ * 修改订单状态。
+ *
+ * 两条路径：
+ *   - order.confirm：只允许 pending → confirmed（厨师接单）。逾期后不能确认，死锁。
+ *   - order.override：任意状态之间转换，给管理员兜底用。
+ *
+ * 这个接口【只改状态】，不能改菜品内容 —— 点菜是家人的事。
+ */
+router.patch(
+  '/orders/:id/status',
+  asyncHandler(async (req, res) => {
+    const id = int(req.params.id, { name: '订单', min: 1 });
+    const next = enumValue(req.body && req.body.status, ORDER_STATUS, { name: '订单状态' });
+
+    const order = await db.queryOne(
+      `SELECT o.id, o.status, o.order_date, o.meal_type, u.display_name
+       FROM orders o JOIN users u ON u.id = o.user_id WHERE o.id = ?`,
+      [id]
+    );
+    if (!order) throw notFound('订单不存在');
+
+    // 先推进到期状态，否则可能把已过期的单当成 pending 确认
+    await safeAdvanceExpired();
+    const fresh = await db.queryOne('SELECT status FROM orders WHERE id = ?', [id]);
+    const current = fresh.status;
+
+    if (current === next) {
+      return ok(res, { orderId: id, status: current, unchanged: true });
+    }
+
+    const canOverride = req.user.isOwner || req.user.perms.has('order.override');
+    const canConfirm = req.user.isOwner || req.user.perms.has('order.confirm');
+
+    if (!canOverride) {
+      if (!canConfirm) throw forbidden('没有确认订单的权限');
+      // 普通确认：只能把待确认改成已确认
+      if (!(current === 'pending' && next === 'confirmed')) {
+        throw forbidden(
+          current === 'overdue'
+            ? '该订单已逾期，普通确认无法处理，请联系管理员'
+            : `不能从「${statusText(current)}」改成「${statusText(next)}」`
+        );
+      }
+    }
+
+    await db.withTransaction(async (conn) => {
+      await conn.query('UPDATE orders SET status = ? WHERE id = ?', [next, id]);
+      await audit.record(conn, {
+        actor: audit.actorOf(req),
+        action: 'order.status',
+        targetType: 'order',
+        targetId: id,
+        targetName: `${order.display_name} ${order.order_date} ${order.meal_type}`,
+        before: { status: statusText(current) },
+        after: { status: statusText(next) },
+      });
+    });
+
+    ok(res, { orderId: id, status: next });
   })
 );
 

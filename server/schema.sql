@@ -85,7 +85,8 @@ CREATE TABLE IF NOT EXISTS orders (
   order_date DATE         NOT NULL              COMMENT '用餐日期',
   meal_type  ENUM('breakfast','lunch','dinner') NOT NULL DEFAULT 'lunch' COMMENT '餐次：早/午/晚',
   notes      VARCHAR(500) NULL                  COMMENT '忌口/整体备注',
-  status     TINYINT      NOT NULL DEFAULT 1    COMMENT '1 有效，0 已撤销',
+  status     ENUM('pending','confirmed','overdue','completed') NOT NULL DEFAULT 'pending'
+                                                      COMMENT 'pending待确认 / confirmed已确认 / overdue已逾期 / completed已完成',
   created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
