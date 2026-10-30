@@ -35,13 +35,10 @@ App.store = (function () {
   }
 
   /** 侧边导航与落地页的候选顺序，取第一个有权限的 */
-  const HOME_CANDIDATES = ['/menu', '/summary', '/admin/dishes', '/admin/users', '/admin/audit'];
-
-  /** 当前用户的默认落地页（不含 #） */
+  // 落地页固定首页：它不需要权限，也避免登录就撞上点菜页的「选餐次」弹窗
   function homePath() {
     if (!state.user) return '/login';
-    const hit = HOME_CANDIDATES.find((p) => can(PATH_PERMISSION[p]));
-    return hit || '/summary';
+    return '/home';
   }
 
   /** 路径 → 所需权限（与 router.js 的路由表保持一致） */

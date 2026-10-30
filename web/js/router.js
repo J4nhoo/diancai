@@ -7,6 +7,7 @@
 App.router = (function () {
   const routes = [
     { path: '/login', component: 'page-login', title: '登录', perm: null },
+    { path: '/home', component: 'page-home', title: '朝夕家膳', perm: null },
     { path: '/menu', component: 'page-menu', title: '点菜', perm: 'menu.view' },
     { path: '/my-orders', component: 'page-my-orders', title: '我的订单', perm: 'order.submit' },
     { path: '/summary', component: 'page-summary', title: '菜单汇总', perm: 'summary.view' },
@@ -68,7 +69,7 @@ App.router = (function () {
 
   const title = Vue.computed(() => {
     const route = find(state.path);
-    return route ? route.title : '家庭点菜';
+    return route ? route.title : '朝夕家膳';
   });
 
   return { state, current, title, routes, start, navigate };

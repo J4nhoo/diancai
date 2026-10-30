@@ -1,5 +1,5 @@
 #!/bin/bash
-# 家庭点菜 —— 腾讯云轻量服务器（香港/新加坡）一键部署
+# 朝夕家膳 —— 腾讯云轻量服务器（香港/新加坡）一键部署
 #
 # 用法（在服务器上，root 身份）：
 #   curl -fsSL <脚本地址> | bash
@@ -138,7 +138,7 @@ fi
 step "配置开机自启（systemd）"
 cat > /etc/systemd/system/meal-order.service <<EOF
 [Unit]
-Description=家庭点菜 H5 后端
+Description=朝夕家膳 H5 后端
 After=network.target mysql.service
 Wants=mysql.service
 
